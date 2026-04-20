@@ -8,13 +8,16 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Filament\Models\Contracts\FilamentUser;
+use Filament\Panel;
+
 
 
 use Spatie\Permission\Traits\HasRoles;
 use Spatie\Activitylog\Traits\LogsActivity;
 use Spatie\Activitylog\LogOptions;
 
-class User extends Authenticatable
+class User extends Authenticatable implements FilamentUser
 {
     /** @use HasFactory<UserFactory> */
     use HasFactory, Notifiable;
@@ -67,5 +70,11 @@ class User extends Authenticatable
             ->logFillable()          // Registra cualquier cambio en los campos definidos en $fillable
             ->logOnlyDirty()         // Solo crea un registro en la BD si los datos realmente cambiaron
             ->dontSubmitEmptyLogs(); // Evita guardar registros vacíos si se da clic en "Guardar" sin alterar nada
+    }
+    // 5. Permiso para entrar al panel de Filament
+    public function canAccessPanel(Panel $panel): bool
+    {
+        // Solo deja entrar a los que tengan el rol de super_admin
+        return $this->hasRole('super_admin');
     }
 }
