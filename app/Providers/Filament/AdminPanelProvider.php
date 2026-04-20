@@ -59,7 +59,7 @@ class AdminPanelProvider extends PanelProvider
                 FilamentShieldPlugin::make(),
                 FilamentBackgroundsPlugin::make()->imageProvider(
                     MyImages::make()
-                        ->directory('images\backgrounds')
+                        ->directory('images/backgrounds')
                 ),
             ])
             ->authMiddleware([
