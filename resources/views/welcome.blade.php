@@ -1565,9 +1565,9 @@
                 <!-- App Logo inserted here before text -->
                 <div class="flex justify-start mb-6 group">
                     <div
-                        class="w-12 h-12 bg-gradient-to-br from-[#f53003] to-[#ff8a5c] rounded-xl flex items-center justify-center shadow-lg">
+                        class="w-150 h-12 bg-gradient-to-br from-[#f53003] to-[#ff8a5c] rounded-xl flex items-center justify-center">
                         <img src="{{ asset('images/coreflow.png') }}" alt="App Logo"
-                            class="w-12 h-12 object-contain rounded-xl">
+                            class="w-150 h-12 object-contain rounded-xl">
                     </div>
 
                 </div>
