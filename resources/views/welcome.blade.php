@@ -1564,10 +1564,8 @@
                 class="text-[13px] leading-[20px] flex-1 p-6 pb-12 lg:p-20 bg-white dark:bg-[#161615] dark:text-[#EDEDEC] shadow-[inset_0px_0px_0px_1px_rgba(26,26,0,0.16)] dark:shadow-[inset_0px_0px_0px_1px_#fffaed2d] rounded-bl-lg rounded-br-lg lg:rounded-tl-lg lg:rounded-br-none">
                 <!-- App Logo inserted here before text -->
                 <div class="flex justify-start mb-6 group">
-                    <div
-                        class="w-150 h-12 bg-gradient-to-br from-[#f53003] to-[#ff8a5c] rounded-xl flex items-center justify-center">
-                        <img src="{{ asset('images/coreflow.png') }}" alt="App Logo"
-                            class="w-150 h-12 object-contain rounded-xl">
+                    <div class="w-full h-12 flex items-center justify-center">
+                        <img src="{{ asset('images/coreflow.png') }}" alt="App Logo" class="w-auto h-12 object-contain">
                     </div>
 
                 </div>
