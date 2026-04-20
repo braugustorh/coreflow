@@ -74,7 +74,12 @@ class User extends Authenticatable implements FilamentUser
     // 5. Permiso para entrar al panel de Filament
     public function canAccessPanel(Panel $panel): bool
     {
-        // Solo deja entrar a los que tengan el rol de super_admin
-        return $this->hasRole('super_admin');
+        // Antes solo permitía a 'super_admin'. Al devolver true, 
+        // Filament permite el login, y luego Filament Shield y las 
+        // Policies se encargan de restringir qué puede ver o hacer cada usuario.
+        return true; 
+        
+        // Si necesitas ser estricto sobre quién entra al panel:
+        // return $this->hasAnyRole(['super_admin', 'Geólogo', 'Operador']);
     }
 }
