@@ -62,6 +62,17 @@ class SampleValidationService
                         }
                     }
 
+                    // Rule: SAMPLE_LENGTH <= DRILLED_LENGTH
+                    if (
+                        $sample->sample_length !== null && 
+                        $sample->drilled_length !== null
+                    ) {
+                        // Allow a tiny floating-point tolerance
+                        if ($sample->sample_length > ($sample->drilled_length + 0.001)) {
+                            $errors[] = 'El SAMPLE_LENGTH (' . $sample->sample_length . ') no puede ser mayor al DRILLED_LENGTH (' . $sample->drilled_length . ').';
+                        }
+                    }
+
                     // Rule c: Si SAMPLE_TYPE == "O", FROM y TO no deben estar vacíos
                     // Treating explicit string 'O'
                     if (strtoupper((string) $sample->sample_type) === 'O') {

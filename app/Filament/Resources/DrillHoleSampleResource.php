@@ -68,7 +68,7 @@ class DrillHoleSampleResource extends Resource
                 Tables\Columns\TextColumn::make('to')->label('TO')->numeric(3)->sortable(),
                 Tables\Columns\TextColumn::make('drilled_length')->label('DRILLED_LENGTH')->numeric(3)->sortable(),
                 Tables\Columns\TextColumn::make('sample_length')->label('SAMPLE_LENGTH')->numeric(3)->sortable(),
-                Tables\Columns\TextColumn::make('sample_number')->label('SAMPLE_NUMBER')->searchable(),
+                Tables\Columns\TextColumn::make('sample_number')->label('SAMPLE_NUMBER')->searchable()->sortable(),
                 Tables\Columns\TextColumn::make('sample_type')->label('SAMPLE_TYPE')->searchable(),
                 Tables\Columns\TextColumn::make('control_type')->label('CONTROL_TYPE')->searchable(),
                 Tables\Columns\TextColumn::make('wght')->label('WGHT')->numeric(3)->sortable(),
@@ -80,10 +80,12 @@ class DrillHoleSampleResource extends Resource
                 Tables\Columns\TextColumn::make('costal')->label('COSTAL'),
             ])
             ->filters([
-                //
+                Tables\Filters\Filter::make('con_errores')
+                    ->label('Con Errores')
+                    ->query(fn (Builder $query): Builder => $query->whereNotNull('errors')),
             ])
             ->actions([
-                Tables\Actions\EditAction::make(),
+                \Filament\Actions\EditAction::make(),
                 DeleteAction::make(),
             ])
             ->bulkActions([
