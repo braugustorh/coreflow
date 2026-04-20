@@ -82,7 +82,7 @@ class DrillHoleSampleResource extends Resource
             ->filters([
                 Tables\Filters\Filter::make('con_errores')
                     ->label('Con Errores')
-                    ->query(fn (Builder $query): Builder => $query->whereNotNull('errors')),
+                    ->query(fn(Builder $query): Builder => $query->whereNotNull('errors')),
             ])
             ->actions([
                 \Filament\Actions\EditAction::make(),
