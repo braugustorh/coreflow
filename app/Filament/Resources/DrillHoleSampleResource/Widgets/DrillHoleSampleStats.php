@@ -10,21 +10,47 @@ class DrillHoleSampleStats extends BaseWidget
 {
     protected ?string $pollingInterval = '10s';
 
+    public ?int $barrenoId = null;
+
+    public function mount(?int $barrenoId = null): void
+    {
+        if ($barrenoId) {
+            $this->barrenoId = $barrenoId;
+        }
+    }
+
     protected function getStats(): array
     {
-        $userId = auth()->id();
-        
-        // Base query for user's drafts
-        $drafts = DrillHoleSample::where('user_id', $userId)->where('status', 'draft');
+        $user = auth()->user();
+        $isAdmin = $user && ($user->hasRole(['super_admin', 'Admin CoreFlow']) || $user->id === 1);
+        $isSupervisor = $user && $user->hasRole(['Supervisor CoreS', 'Supervisor Coreshack', 'supervisor', 'Supervisor']);
+
+        // Base query para borradores
+        $drafts = DrillHoleSample::where('status', 'draft')
+            ->where('capture_source', 'import');
+
+        if ($this->barrenoId) {
+            $drafts->where('barreno_id', $this->barrenoId);
+        } else {
+            if (!$isAdmin) {
+                if ($isSupervisor) {
+                    $drafts->whereHas('proyecto', fn($q) => $q->where('sede_id', $user->sede_id));
+                } else {
+                    $drafts->where('user_id', $user?->id);
+                }
+            }
+        }
         
         $total = (clone $drafts)->count();
         $errorsCount = (clone $drafts)->whereNotNull('errors')->count();
         $originalsCount = (clone $drafts)->whereRaw('UPPER(TRIM(sample_type)) = ?', ['O'])->count();
         $controlsCount = (clone $drafts)->whereRaw('UPPER(TRIM(sample_type)) = ?', ['CONTROL'])->count();
 
+        $sub = $this->barrenoId ? 'del barreno actual' : 'en la bandeja';
+
         return [
             Stat::make('Total de Muestras (Borrador)', $total)
-                ->description('Muestras cargadas sin oficializar')
+                ->description("Muestras {$sub}")
                 ->descriptionIcon('heroicon-m-document-duplicate')
                 ->color('primary'),
                 

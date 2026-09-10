@@ -16,7 +16,7 @@ class SedesTable
         return $table
             ->columns([
                 TextColumn::make('name')
-                    ->label('Nombre de la Sede')
+                    ->label('Nombre del Distrito')
                     ->searchable()
                     ->sortable(),
 

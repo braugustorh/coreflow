@@ -20,6 +20,14 @@ class SedeResource extends Resource
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedRectangleStack;
 
+    protected static string|\UnitEnum|null $navigationGroup = 'Estructura Torex';
+
+    protected static ?string $modelLabel = 'Distrito';
+
+    protected static ?string $pluralModelLabel = 'Distritos';
+
+    protected static ?string $navigationLabel = 'Distritos';
+
     protected static ?string $recordTitleAttribute = 'name';
 
     public static function form(Schema $schema): Schema
@@ -46,5 +54,13 @@ class SedeResource extends Resource
             'create' => CreateSede::route('/create'),
             'edit' => EditSede::route('/{record}/edit'),
         ];
+    }
+
+    public static function canViewAny(): bool
+    {
+        $user = auth()->user();
+        if (!$user) return false;
+        return $user->hasRole(['super_admin', 'Admin CoreFlow'])
+            || $user->can('ViewAny:Sede');
     }
 }

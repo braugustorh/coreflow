@@ -13,13 +13,13 @@ class SedeForm
         return $schema
             ->components([
                 // Envolvemos todo en una "Card" visual (Section)
-                \Filament\Schemas\Components\Section::make('Detalles del Centro de Trabajo')
-                    ->description('Ingresa la información básica y ubicación operativa de la sede.')
+                \Filament\Schemas\Components\Section::make('Detalles del Distrito')
+                    ->description('Ingresa la información básica y ubicación operativa del distrito.')
                     ->icon('heroicon-o-building-office-2') // Un icono elegante para el encabezado
                     ->schema([
                         // El nombre ocupa todo el ancho de la tarjeta
                         TextInput::make('name')
-                            ->label('Nombre de la Sede')
+                            ->label('Nombre del Distrito')
                             ->placeholder('Ej. Oficina Central de la Mina')
                             ->required()
                             ->maxLength(255)

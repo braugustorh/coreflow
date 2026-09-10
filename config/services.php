@@ -35,4 +35,9 @@ return [
         ],
     ],
 
+    'pdfco' => [
+        'key'      => env('PDF_CO_API_KEY'),
+        'template' => env('PDF_CO_ALS_TEMPLATE', 'filetoken://38cc2e04b82559b187bbee4d92ad5e7be09f0240db8fde3a25'),
+    ],
+
 ];

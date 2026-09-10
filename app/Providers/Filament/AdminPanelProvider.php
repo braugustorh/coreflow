@@ -31,6 +31,8 @@ class AdminPanelProvider extends PanelProvider
             ->id('admin')
             ->path('admin')
             ->login()
+            ->databaseNotifications()
+            ->databaseNotificationsPolling('30s')
             ->colors([
                 'primary' => Color::Amber,
             ])
@@ -56,7 +58,9 @@ class AdminPanelProvider extends PanelProvider
                 DispatchServingFilamentEvent::class,
             ])
             ->plugins([
-                FilamentShieldPlugin::make(),
+                FilamentShieldPlugin::make()
+                    ->navigationGroup('Control de Accesos')
+                    ->navigationSort(2),
                 FilamentBackgroundsPlugin::make()->imageProvider(
                     MyImages::make()
                         ->directory('images/backgrounds')

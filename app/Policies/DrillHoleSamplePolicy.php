@@ -29,12 +29,36 @@ class DrillHoleSamplePolicy
 
     public function update(AuthUser $authUser, DrillHoleSample $drillHoleSample): bool
     {
-        return $authUser->can('Update:DrillHoleSample');
+        if (!$authUser->can('Update:DrillHoleSample')) {
+            return false;
+        }
+
+        $isSent = (bool) $drillHoleSample->is_archived
+            || !empty($drillHoleSample->sent_date)
+            || !empty($drillHoleSample->workOrder?->dispatch_date);
+
+        if ($isSent) {
+            return method_exists($authUser, 'hasRole') && $authUser->hasRole(['super_admin', 'Admin CoreFlow']);
+        }
+
+        return true;
     }
 
     public function delete(AuthUser $authUser, DrillHoleSample $drillHoleSample): bool
     {
-        return $authUser->can('Delete:DrillHoleSample');
+        if (!$authUser->can('Delete:DrillHoleSample')) {
+            return false;
+        }
+
+        $isSent = (bool) $drillHoleSample->is_archived
+            || !empty($drillHoleSample->sent_date)
+            || !empty($drillHoleSample->workOrder?->dispatch_date);
+
+        if ($isSent) {
+            return method_exists($authUser, 'hasRole') && $authUser->hasRole(['super_admin', 'Admin CoreFlow']);
+        }
+
+        return true;
     }
 
     public function restore(AuthUser $authUser, DrillHoleSample $drillHoleSample): bool

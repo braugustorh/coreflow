@@ -53,7 +53,7 @@ class UserForm
                         // Asignación de Sede
                         Select::make('sede_id')
                             ->relationship('sede', 'name')
-                            ->label('Centro de Trabajo (Sede)')
+                            ->label('Distrito')
                             ->prefixIcon('heroicon-m-building-office')
                             ->searchable()
                             ->preload()

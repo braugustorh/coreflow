@@ -20,7 +20,7 @@ class UsersTable
             ->columns([
                 Tables\Columns\TextColumn::make('name')->searchable(),
                 Tables\Columns\TextColumn::make('email')->searchable(),
-                Tables\Columns\TextColumn::make('sede.name')->label('Sede')->sortable(),
+                Tables\Columns\TextColumn::make('sede.name')->label('Distrito')->sortable(),
                 Tables\Columns\TextColumn::make('roles.name')->label('Roles')->badge(),
             ])
             ->actions([
