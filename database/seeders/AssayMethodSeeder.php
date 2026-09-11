@@ -13,14 +13,6 @@ class AssayMethodSeeder extends Seeder
     public function run(): void
     {
         $methods = [
-            ['code' => '3A_AAS', 'name' => '3 Acid Digest (HNO3, HClO4 digestion; HCl leach), unspecified AAS finish.'],
-            ['code' => '3A_FAAS', 'name' => '4 Acid Digest (HNO3, HClO4 digestion; HCl leach), flame AAS finish.'],
-            ['code' => '3A_GAAS', 'name' => '5 Acid Digest (HNO3, HClO4 digestion; HCl leach), graphite furnace AAS finish.'],
-            ['code' => '3A_ICPEMS', 'name' => '3 Acid Digest (HNO3, HClO4 digestion; HCl leach), enhanced ICP-MS finish.'],
-            ['code' => '3A_ICPEOES', 'name' => '3 Acid Digest (HNO3, HClO4 digestion; HCl leach), enhanced ICP-OES finish.'],
-            ['code' => '3A_ICPMS', 'name' => '3 Acid Digest (HNO3, HClO4 digestion; HCl leach), ICP-MS finish.'],
-            ['code' => '3A_ICPOES', 'name' => '3 Acid Digest (HNO3, HClO4 digestion; HCl leach), ICP-OES finish.'],
-            ['code' => '3A_SAAS', 'name' => '5 Acid Digest (HNO3, HClO4 digestion; HCl leach), solvent extraction AAS finish.'],
             ['code' => 'FA_AAS', 'name' => 'Fire Assay, unspecified AAS finish.'],
             ['code' => 'FA_FAAS', 'name' => 'Fire Assay, flame AAS finish.'],
             ['code' => 'FA_FAAS2', 'name' => 'Fire Assay / Flame AA'],
