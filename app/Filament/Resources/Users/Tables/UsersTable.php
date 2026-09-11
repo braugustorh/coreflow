@@ -18,6 +18,7 @@ class UsersTable
     {
         return $table
             ->columns([
+                Tables\Columns\TextColumn::make('code')->label('CODE')->searchable()->sortable(),
                 Tables\Columns\TextColumn::make('name')->searchable(),
                 Tables\Columns\TextColumn::make('email')->searchable(),
                 Tables\Columns\TextColumn::make('sede.name')->label('Distrito')->sortable(),

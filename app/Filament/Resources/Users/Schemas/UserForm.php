@@ -20,6 +20,14 @@ class UserForm
                     ->icon('heroicon-o-user-circle')
                     ->columns(2) // Divide el contenido de esta tarjeta en 2 columnas
                     ->schema([
+                        TextInput::make('code')
+                            ->label('CODE')
+                            ->required()
+                            ->maxLength(3)
+                            ->extraInputAttributes(['style' => 'text-transform:uppercase'])
+                            ->dehydrateStateUsing(fn ($state) => strtoupper($state))
+                            ->unique(ignoreRecord: true),
+
                         TextInput::make('name')
                             ->label('Nombre Completo')
                             ->prefixIcon('heroicon-m-user') // Icono dentro del input
