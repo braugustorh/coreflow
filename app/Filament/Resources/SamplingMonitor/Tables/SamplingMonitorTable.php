@@ -548,7 +548,9 @@ class SamplingMonitorTable
 
                         if ($isArchived) {
                             DrillHoleSample::where('work_order_id', $record->id)
-                                ->update(['is_archived' => false]);
+                                ->update(['is_archived' => false, 'sent_date' => null]);
+
+                            $record->update(['sent_to_lab' => false, 'dispatch_date' => null]);
 
                             Notification::make()
                                 ->title('Orden devuelta a Por Enviar')
@@ -578,6 +580,9 @@ class SamplingMonitorTable
 
                         DrillHoleSample::where('work_order_id', $record->id)
                             ->update(['is_archived' => true]);
+
+                        // Marcar la WO como enviada (fuente de verdad para restricciones de edición)
+                        $record->update(['sent_to_lab' => true]);
 
                         Notification::make()
                             ->title('Orden Enviada al Laboratorio')

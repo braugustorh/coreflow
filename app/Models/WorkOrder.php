@@ -167,4 +167,14 @@ class WorkOrder extends Model
             ->orderByRaw('COUNT(*) DESC')
             ->value('responsible_supervisor');
     }
+
+    /**
+     * Indica si esta Work Order ya fue enviada al laboratorio.
+     * Una WO se considera "enviada" cuando sus muestras tienen is_archived = true
+     * (acción "Enviar" del Monitor de Muestreo).
+     */
+    public function isSent(): bool
+    {
+        return (bool) $this->sent_to_lab;
+    }
 }

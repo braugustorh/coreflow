@@ -212,7 +212,7 @@ class SampleValidationService
                         }
                     }
 
-                    // Regla h: sample_number único en registros ya oficiales del proyecto
+                    // Regla h: sample_number único en registros ya oficiales del proyecto y en el histórico
                     if (!empty($sample->sample_number) && $sample->proyecto_id) {
                         $existsInProject = DrillHoleSample::where('status', 'official')
                             ->where('proyecto_id', $sample->proyecto_id)
@@ -220,6 +220,17 @@ class SampleValidationService
                             ->exists();
                         if ($existsInProject) {
                             $errors[] = 'El número de muestra ya existe en registros oficiales de este proyecto.';
+                        }
+
+                        // Verificación en registros históricos
+                        $existsInHistorical = \App\Models\HistoricalSample::where('sample_number', $sample->sample_number)
+                            ->where(function ($q) use ($sample) {
+                                $q->where('proyecto_id', $sample->proyecto_id)
+                                  ->orWhereNull('proyecto_id');
+                            })
+                            ->exists();
+                        if ($existsInHistorical) {
+                            $errors[] = 'El número de muestra ya existe en el registro histórico de muestras.';
                         }
 
                         // Verificación cruzada: Si ya existe en otro borrador activo de otro barreno en el mismo proyecto

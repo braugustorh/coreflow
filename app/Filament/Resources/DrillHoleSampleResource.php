@@ -45,13 +45,30 @@ class DrillHoleSampleResource extends Resource
         return [
             // ── Sección: Intervalo ─────────────────────────────────────
             Section::make('Intervalo')
+                ->description(fn(?DrillHoleSample $record) => $record?->isSent() ? '🔒 Esta muestra está bloqueada: la Work Order ya fue enviada al laboratorio.' : null)
                 ->columnSpanFull()
                 ->columns(2)
                 ->schema([
                     Forms\Components\TextInput::make('sample_number')
                         ->label('No. Muestra')
                         ->required()
-                        ->maxLength(50),
+                        ->maxLength(50)
+                        ->disabled(fn(?DrillHoleSample $record): bool => $record?->isSent() ?? false)
+                        ->rules([
+                            fn (Get $get, ?DrillHoleSample $record) => function (string $attribute, $value, \Closure $fail) use ($get, $record) {
+                                $proyectoId = $record?->proyecto_id ?? $get('proyecto_id');
+                                if ($value && $proyectoId) {
+                                    $existsHist = \App\Models\HistoricalSample::where('sample_number', $value)
+                                        ->where(function ($q) use ($proyectoId) {
+                                            $q->where('proyecto_id', $proyectoId)->orWhereNull('proyecto_id');
+                                        })
+                                        ->exists();
+                                    if ($existsHist) {
+                                        $fail("El número de muestra '{$value}' ya existe en el registro histórico de muestras.");
+                                    }
+                                }
+                            },
+                        ]),
 
                     Forms\Components\Select::make('sample_type')
                         ->label('Tipo de Muestra')
@@ -62,6 +79,7 @@ class DrillHoleSampleResource extends Resource
                         ->formatStateUsing(fn($state) => strtoupper(trim((string)$state)) === 'CONTROL' ? 'Control' : 'O')
                         ->live()
                         ->required()
+                        ->disabled(fn(?DrillHoleSample $record): bool => $record?->isSent() ?? false)
                         ->afterStateUpdated(function (Set $set, ?string $state) {
                             if (strtoupper(trim((string)$state)) !== 'CONTROL') {
                                 $set('control_type', null);
@@ -80,6 +98,7 @@ class DrillHoleSampleResource extends Resource
                         ->numeric()
                         ->step(0.01)
                         ->minValue(0)
+                        ->disabled(fn(?DrillHoleSample $record): bool => $record?->isSent() ?? false)
                         ->hidden(fn(Get $get) => strtoupper(trim((string) $get('sample_type'))) === 'CONTROL'),
 
                     Forms\Components\TextInput::make('to_depth')
@@ -87,6 +106,7 @@ class DrillHoleSampleResource extends Resource
                         ->numeric()
                         ->step(0.01)
                         ->minValue(0)
+                        ->disabled(fn(?DrillHoleSample $record): bool => $record?->isSent() ?? false)
                         ->hidden(fn(Get $get) => strtoupper(trim((string) $get('sample_type'))) === 'CONTROL')
                         ->live(debounce: 500)
                         ->afterStateUpdated(function (Get $get, Set $set, ?string $state) {
@@ -110,6 +130,7 @@ class DrillHoleSampleResource extends Resource
                         ->numeric()
                         ->step(0.01)
                         ->minValue(0)
+                        ->disabled(fn(?DrillHoleSample $record): bool => $record?->isSent() ?? false)
                         ->hidden(fn(Get $get) => strtoupper(trim((string) $get('sample_type'))) === 'CONTROL'),
 
                     Forms\Components\TextInput::make('weight')
@@ -118,6 +139,7 @@ class DrillHoleSampleResource extends Resource
                         ->step(0.01)
                         ->minValue(fn () => (float) (\App\Models\SampleSetting::getSettings()->min_sample_weight ?? 0.50))
                         ->maxValue(fn () => (float) (\App\Models\SampleSetting::getSettings()->max_sample_weight ?? 15.00))
+                        ->disabled(fn(?DrillHoleSample $record): bool => $record?->isSent() ?? false)
                         ->hidden(fn(Get $get) => strtoupper(trim((string) $get('sample_type'))) === 'CONTROL'),
                 ]),
 
@@ -143,6 +165,7 @@ class DrillHoleSampleResource extends Resource
                         })
                         ->live()
                         ->searchable()
+                        ->disabled(fn(?DrillHoleSample $record): bool => $record?->isSent() ?? false)
                         ->afterStateUpdated(function (Set $set, ?string $state) {
                             $val = strtoupper(trim((string) $state));
                             if (!str_contains($val, 'STAND')) {
@@ -158,6 +181,7 @@ class DrillHoleSampleResource extends Resource
                         ->relationship('standardSample', 'standard_name')
                         ->searchable()
                         ->preload()
+                        ->disabled(fn(?DrillHoleSample $record): bool => $record?->isSent() ?? false)
                         ->visible(fn(Get $get) => str_contains(strtoupper(trim((string) $get('control_type'))), 'STAND')),
 
                     Forms\Components\Select::make('duplicate_sample_id')
@@ -171,6 +195,7 @@ class DrillHoleSampleResource extends Resource
                                 ->toArray()
                         )
                         ->searchable()
+                        ->disabled(fn(?DrillHoleSample $record): bool => $record?->isSent() ?? false)
                         ->visible(fn(Get $get) => str_contains(strtoupper(trim((string) $get('control_type'))), 'DUP')),
                 ]),
 
@@ -181,10 +206,21 @@ class DrillHoleSampleResource extends Resource
                 ->schema([
                     Forms\Components\Select::make('work_order_id')
                         ->label('Orden de Trabajo')
-                        ->relationship('workOrder', 'work_order_code')
+                        ->relationship(
+                            name: 'workOrder',
+                            titleAttribute: 'work_order_code',
+                            modifyQueryUsing: fn(Builder $q) => $q->whereDoesntHave('drillHoleSamples', fn($s) => $s->where('is_archived', true))
+                        )
                         ->searchable()
                         ->preload()
-                        ->nullable(),
+                        ->nullable()
+                        ->disabled(fn(?DrillHoleSample $record): bool => $record?->isSent() ?? false)
+                        ->helperText(function (?DrillHoleSample $record): ?string {
+                            if ($record?->isSent()) {
+                                return '🔒 Esta muestra pertenece a una Work Order ya enviada al laboratorio.';
+                            }
+                            return null;
+                        }),
 
                     Forms\Components\Select::make('core_size')
                         ->label('Tamaño de Núcleo')
@@ -194,11 +230,13 @@ class DrillHoleSampleResource extends Resource
                             'NQ' => 'NQ',
                             'BQ' => 'BQ',
                         ])
+                        ->disabled(fn(?DrillHoleSample $record): bool => $record?->isSent() ?? false)
                         ->nullable(),
 
                     Forms\Components\Textarea::make('comentarios')
                         ->label('Comentarios')
                         ->rows(2)
+                        ->disabled(fn(?DrillHoleSample $record): bool => $record?->isSent() ?? false)
                         ->columnSpanFull(),
                 ]),
         ];
@@ -344,10 +382,20 @@ class DrillHoleSampleResource extends Resource
                 \Filament\Actions\EditAction::make()
                     ->slideOver()
                     ->modalWidth('3xl')
+                    ->disabled(fn(DrillHoleSample $record): bool => $record->workOrder?->isSent() ?? false)
+                    ->tooltip(fn(DrillHoleSample $record): ?string => ($record->workOrder?->isSent() ?? false)
+                        ? 'Esta muestra está bloqueada: pertenece a una WO ya enviada al laboratorio.'
+                        : null
+                    )
                     ->after(function (DrillHoleSample $record, \App\Services\SampleValidationService $service) {
                         $service->validateDraftsForUser($record->user_id);
                     }),
                 DeleteAction::make()
+                    ->disabled(fn(DrillHoleSample $record): bool => $record->workOrder?->isSent() ?? false)
+                    ->tooltip(fn(DrillHoleSample $record): ?string => ($record->workOrder?->isSent() ?? false)
+                        ? 'No se puede eliminar: esta muestra pertenece a una WO ya enviada al laboratorio.'
+                        : null
+                    )
                     ->after(function (DrillHoleSample $record, \App\Services\SampleValidationService $service) {
                         $service->validateDraftsForUser($record->user_id);
                     }),
@@ -373,6 +421,8 @@ class DrillHoleSampleResource extends Resource
                                         if ($sedeId) {
                                             $query->where('sede_id', $sedeId);
                                         }
+                                        // Only show WOs that have NOT been sent to the lab
+                                        $query->whereDoesntHave('drillHoleSamples', fn($q) => $q->where('is_archived', true));
                                         return $query->get()->mapWithKeys(
                                             fn($wo) =>
                                             [$wo->id => "{$wo->work_order_code} (muestras: {$wo->samples_quantity})"]
@@ -398,6 +448,19 @@ class DrillHoleSampleResource extends Resource
                             ];
                         })
                         ->action(function (\Illuminate\Support\Collection $records, array $data, \App\Services\SampleValidationService $service) {
+                            // Verificar que ninguna de las muestras seleccionadas pertenezca a una WO ya enviada
+                            $lockedSamples = $records->filter(
+                                fn(DrillHoleSample $s) => $s->workOrder?->isSent() ?? false
+                            );
+                            if ($lockedSamples->isNotEmpty()) {
+                                \Filament\Notifications\Notification::make()
+                                    ->title('Operación no permitida')
+                                    ->body('Una o más muestras seleccionadas ya pertenecen a una Work Order enviada al laboratorio y no pueden reasignarse.')
+                                    ->danger()
+                                    ->send();
+                                return;
+                            }
+
                             $barrenoIds = $records->pluck('barreno_id')->unique();
                             if ($barrenoIds->count() > 1) {
                                 \Filament\Notifications\Notification::make()
@@ -414,6 +477,16 @@ class DrillHoleSampleResource extends Resource
                             if (!$workOrder) {
                                 \Filament\Notifications\Notification::make()
                                     ->title('Work Order no encontrada')
+                                    ->danger()
+                                    ->send();
+                                return;
+                            }
+
+                            // Verificar que la WO destino no esté enviada
+                            if ($workOrder->isSent()) {
+                                \Filament\Notifications\Notification::make()
+                                    ->title('Work Order bloqueada')
+                                    ->body("La Work Order {$workOrder->work_order_code} ya fue enviada al laboratorio y no puede recibir más muestras.")
                                     ->danger()
                                     ->send();
                                 return;
@@ -489,6 +562,17 @@ class DrillHoleSampleResource extends Resource
                                 ->send();
                         }),
                     DeleteBulkAction::make()
+                        ->before(function (\Illuminate\Support\Collection $records, \Filament\Actions\DeleteBulkAction $action) {
+                            $locked = $records->filter(fn(DrillHoleSample $s) => $s->isSent());
+                            if ($locked->isNotEmpty()) {
+                                \Filament\Notifications\Notification::make()
+                                    ->title('Operación no permitida')
+                                    ->body('No se pueden eliminar muestras que pertenecen a una Work Order ya enviada al laboratorio.')
+                                    ->danger()
+                                    ->send();
+                                $action->halt();
+                            }
+                        })
                         ->after(function (\App\Services\SampleValidationService $service) {
                             $service->validateDraftsForUser(auth()->id());
                         }),

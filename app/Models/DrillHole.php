@@ -2,10 +2,13 @@
 
 namespace App\Models;
 
+use App\Observers\DrillHoleObserver;
+use Illuminate\Database\Eloquent\Attributes\ObservedBy;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
+#[ObservedBy([DrillHoleObserver::class])]
 class DrillHole extends Model
 {
     protected $fillable = [
@@ -38,10 +41,13 @@ class DrillHole extends Model
         'drilling_type',
         'core_size',
         'purpose',
+        'is_historical',
+        'status',
     ];
 
     protected $casts = [
         'is_child'          => 'boolean',
+        'is_historical'     => 'boolean',
         'planned_easting'   => 'decimal:3',
         'planned_northing'  => 'decimal:3',
         'planned_elevation' => 'decimal:2',
@@ -56,6 +62,16 @@ class DrillHole extends Model
         'max_depth'         => 'decimal:2',
         'survey_date'       => 'date',
     ];
+
+    public function scopeOperational(\Illuminate\Database\Eloquent\Builder $query): \Illuminate\Database\Eloquent\Builder
+    {
+        return $query->where('is_historical', false);
+    }
+
+    public function scopeHistorical(\Illuminate\Database\Eloquent\Builder $query): \Illuminate\Database\Eloquent\Builder
+    {
+        return $query->where('is_historical', true);
+    }
 
     /**
      * Determina si el barreno cuenta con atributos instalados capturados.

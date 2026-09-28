@@ -22,11 +22,11 @@ class ActiveDrillHolesChart extends ChartWidget
             return ['datasets' => [], 'labels' => []];
         }
 
-        // Listar proyectos de la sede con el conteo de barrenos
-        $proyectos = Proyecto::where('sede_id', $sedeId)
-            ->when($proyectoId, fn ($q) => $q->where('id', $proyectoId))
-            ->withCount('drillHoles') // Conteo de barrenos por cada proyecto
-            ->get();
+            // Listar proyectos de la sede con el conteo de barrenos operativos
+            $proyectos = Proyecto::where('sede_id', $sedeId)
+                ->when($proyectoId, fn ($q) => $q->where('id', $proyectoId))
+                ->withCount(['drillHoles' => fn ($q) => $q->where('is_historical', false)])
+                ->get();
 
         return [
             'datasets' => [

@@ -13,7 +13,12 @@ class EditWorkOrder extends EditRecord
     protected function getHeaderActions(): array
     {
         return [
-            DeleteAction::make(),
+            DeleteAction::make()
+                ->disabled(fn(\App\Models\WorkOrder $record): bool => $record->isSent())
+                ->tooltip(fn(\App\Models\WorkOrder $record): ?string => $record->isSent()
+                    ? 'No se puede eliminar: esta Work Order ya fue enviada al laboratorio.'
+                    : null
+                ),
         ];
     }
 }

@@ -113,4 +113,26 @@ class DrillHoleSample extends Model
     {
         return $query->where('barreno_id', $barrenoId);
     }
+
+    /**
+     * Determina si la muestra o su Work Order ya fue enviada al laboratorio.
+     */
+    public function isSent(): bool
+    {
+        if ($this->is_archived) {
+            return true;
+        }
+
+        if ($this->relationLoaded('workOrder') && $this->workOrder) {
+            return (bool) $this->workOrder->sent_to_lab;
+        }
+
+        if ($this->work_order_id) {
+            return WorkOrder::where('id', $this->work_order_id)
+                ->where('sent_to_lab', true)
+                ->exists();
+        }
+
+        return false;
+    }
 }

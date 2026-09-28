@@ -63,6 +63,6 @@ class SamplingMonitorResource extends Resource
     {
         $user = auth()->user();
         if (!$user) return false;
-        return $user->hasRole(['super_admin', 'Admin CoreFlow', 'Supervisor CoreS']);
+        return $user->hasRole(['super_admin', 'Admin CoreFlow', 'Admin', 'Supervisor CoreS', 'Supervisor Coreshack']);
     }
 }

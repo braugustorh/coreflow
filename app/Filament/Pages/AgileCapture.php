@@ -271,6 +271,19 @@ class AgileCapture extends Page implements HasForms, HasTable
                 continue;
             }
 
+            // Validar duplicado en muestras históricas
+            $existsHistorical = \App\Models\HistoricalSample::where('sample_number', $data['sample_number'])
+                ->where(function ($q) use ($data) {
+                    $q->where('proyecto_id', $data['proyecto_id'])
+                      ->orWhereNull('proyecto_id');
+                })
+                ->exists();
+
+            if ($existsHistorical) {
+                $errors[] = "Fila " . ($index + 1) . ": La muestra \"{$data['sample_number']}\" ya existe en el registro histórico.";
+                continue;
+            }
+
             $data['barreno_id'] = $this->selectedBarrenoId;
             $data['user_id'] = auth()->id();
             $data['capture_source'] = 'manual';
@@ -503,7 +516,11 @@ class AgileCapture extends Page implements HasForms, HasTable
                     ->icon('heroicon-o-pencil-square')
                     ->modalHeading(fn (DrillHoleSample $record) => "Editar Muestra {$record->sample_number}")
                     ->slideOver()
-                    ->disabled(fn (DrillHoleSample $record): bool => !auth()->user()?->hasRole(['super_admin', 'Admin CoreFlow']) && ($record->is_archived || !empty($record->workOrder?->dispatch_date)))
+                    ->disabled(fn (DrillHoleSample $record): bool => $record->isSent())
+                    ->tooltip(fn (DrillHoleSample $record): ?string => $record->isSent()
+                        ? 'Esta muestra está bloqueada: pertenece a una WO ya enviada al laboratorio.'
+                        : null
+                    )
                     ->form([
                         Grid::make(2)->schema([
                             TextInput::make('from_depth')
@@ -540,7 +557,11 @@ class AgileCapture extends Page implements HasForms, HasTable
                     ]),
                 DeleteAction::make()
                     ->label('Eliminar')
-                    ->disabled(fn (DrillHoleSample $record): bool => !auth()->user()?->hasRole(['super_admin', 'Admin CoreFlow']) && ($record->is_archived || !empty($record->workOrder?->dispatch_date)))
+                    ->disabled(fn (DrillHoleSample $record): bool => $record->isSent())
+                    ->tooltip(fn (DrillHoleSample $record): ?string => $record->isSent()
+                        ? 'No se puede eliminar: esta muestra pertenece a una WO ya enviada al laboratorio.'
+                        : null
+                    )
                     ->requiresConfirmation()
                     ->modalHeading('Eliminar Muestra')
                     ->modalDescription('¿Estás seguro de que deseas eliminar esta muestra? Esta acción no se puede deshacer.')
@@ -595,7 +616,9 @@ class AgileCapture extends Page implements HasForms, HasTable
                         $barrenoId = $this->selectedBarrenoId;
                         if (!$barrenoId) return;
 
-                        $query = DrillHoleSample::where('barreno_id', $barrenoId);
+                        $query = DrillHoleSample::where('barreno_id', $barrenoId)
+                            ->where('is_archived', false)
+                            ->whereDoesntHave('workOrder', fn($q) => $q->whereHas('drillHoleSamples', fn($s) => $s->where('is_archived', true)));
                         $scope = $data['scope'] ?? 'all';
                         $coreSize = $data['core_size'];
                         $updatedCount = 0;
@@ -686,7 +709,9 @@ class AgileCapture extends Page implements HasForms, HasTable
                         $coreSize = $data['core_size'];
                         $barrenoId = $this->selectedBarrenoId;
 
-                        $query = DrillHoleSample::where('barreno_id', $barrenoId);
+                        $query = DrillHoleSample::where('barreno_id', $barrenoId)
+                            ->where('is_archived', false)
+                            ->whereDoesntHave('workOrder', fn($q) => $q->whereHas('drillHoleSamples', fn($s) => $s->where('is_archived', true)));
 
                         $updatedCount = 0;
                         if ($scope === 'all') {
@@ -733,6 +758,8 @@ class AgileCapture extends Page implements HasForms, HasTable
                                     if ($sedeId) {
                                         $query->where('sede_id', $sedeId);
                                     }
+                                    // Solo WOs que NO han sido enviadas al laboratorio
+                                    $query->whereDoesntHave('drillHoleSamples', fn($q) => $q->where('is_archived', true));
                                     return $query->get()->mapWithKeys(
                                         fn($wo) =>
                                         [$wo->id => "{$wo->work_order_code} (muestras: {$wo->samples_quantity})"]
@@ -758,12 +785,35 @@ class AgileCapture extends Page implements HasForms, HasTable
                         ];
                     })
                     ->action(function (Collection $records, array $data) {
+                        // Verificar que ninguna muestra seleccionada pertenezca a una WO ya enviada
+                        $lockedSamples = $records->filter(
+                            fn(DrillHoleSample $s) => $s->workOrder?->isSent() ?? false
+                        );
+                        if ($lockedSamples->isNotEmpty()) {
+                            \Filament\Notifications\Notification::make()
+                                ->title('Operación no permitida')
+                                ->body('Una o más muestras seleccionadas ya pertenecen a una Work Order enviada al laboratorio y no pueden reasignarse.')
+                                ->danger()
+                                ->send();
+                            return;
+                        }
+
                         $barrenoId = $this->selectedBarrenoId;
                         $workOrder = WorkOrder::find($data['work_order_id']);
 
                         if (!$workOrder) {
                             \Filament\Notifications\Notification::make()
                                 ->title('Work Order no encontrada')
+                                ->danger()
+                                ->send();
+                            return;
+                        }
+
+                        // Verificar que la WO destino no esté enviada al laboratorio
+                        if ($workOrder->isSent()) {
+                            \Filament\Notifications\Notification::make()
+                                ->title('Work Order bloqueada')
+                                ->body("La Work Order {$workOrder->work_order_code} ya fue enviada al laboratorio y no puede recibir más muestras.")
                                 ->danger()
                                 ->send();
                             return;

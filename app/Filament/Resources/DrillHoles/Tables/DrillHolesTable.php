@@ -94,11 +94,23 @@ class DrillHolesTable
                     })
                     ->toggleable(),
 
+                // ─── Columna Categoría / Tipo ──────────────────────────────
+                TextColumn::make('category_type')
+                    ->label('Tipo')
+                    ->badge()
+                    ->state(fn (DrillHole $record): string => $record->is_historical ? 'Histórico' : 'Operativo')
+                    ->color(fn (string $state): string => $state === 'Histórico' ? 'gray' : 'warning')
+                    ->icon(fn (string $state): string => $state === 'Histórico' ? 'heroicon-o-archive-box' : 'heroicon-o-bolt')
+                    ->toggleable(),
+
                 // ─── Columna Badge de Estado de Atributos Instalados ────────
                 TextColumn::make('installed_status')
                     ->label('Atributos Instalados')
                     ->badge()
                     ->state(function (DrillHole $record): string {
+                        if ($record->is_historical) {
+                            return 'Histórico';
+                        }
                         if (!$record->hasInstalledAttributes()) {
                             return 'Falta Capturar';
                         }
@@ -108,6 +120,9 @@ class DrillHolesTable
                         return 'Instalados';
                     })
                     ->color(function (DrillHole $record): string {
+                        if ($record->is_historical) {
+                            return 'gray';
+                        }
                         if (!$record->hasInstalledAttributes()) {
                             return 'danger';
                         }
@@ -117,6 +132,9 @@ class DrillHolesTable
                         return 'success';
                     })
                     ->icon(function (DrillHole $record): string {
+                        if ($record->is_historical) {
+                            return 'heroicon-o-archive-box';
+                        }
                         if (!$record->hasInstalledAttributes()) {
                             return 'heroicon-o-exclamation-circle';
                         }
@@ -132,6 +150,9 @@ class DrillHolesTable
                     ->label('Estado de Gaps')
                     ->badge()
                     ->state(function (DrillHole $record): string {
+                        if ($record->is_historical) {
+                            return 'Histórico';
+                        }
                         $maxDepth = (float) ($record->max_depth ?? 0);
                         if ($maxDepth <= 0) {
                             return 'Sin Prof. Máx.';
@@ -140,6 +161,9 @@ class DrillHolesTable
                         return empty($gaps) ? '100% Cubierto' : count($gaps) . ' Gap(s) Pendiente(s)';
                     })
                     ->color(function (DrillHole $record): string {
+                        if ($record->is_historical) {
+                            return 'gray';
+                        }
                         $maxDepth = (float) ($record->max_depth ?? 0);
                         if ($maxDepth <= 0) {
                             return 'gray';
@@ -148,6 +172,9 @@ class DrillHolesTable
                         return empty($gaps) ? 'success' : 'danger';
                     })
                     ->icon(function (DrillHole $record): string {
+                        if ($record->is_historical) {
+                            return 'heroicon-o-archive-box';
+                        }
                         $maxDepth = (float) ($record->max_depth ?? 0);
                         if ($maxDepth <= 0) {
                             return 'heroicon-o-minus-circle';
@@ -296,6 +323,25 @@ class DrillHolesTable
             ])
             ->recordActions([
                 EditAction::make(),
+
+                Action::make('sync_children')
+                    ->label('Sincronizar Hijos')
+                    ->icon('heroicon-o-arrow-path-rounded-square')
+                    ->color('info')
+                    ->visible(fn (DrillHole $record): bool => $record->hasChildren() && $record->hasInstalledAttributes())
+                    ->requiresConfirmation()
+                    ->modalHeading(fn (DrillHole $record) => "Sincronizar datos instalados con hijos ({$record->nombre_barreno})")
+                    ->modalDescription('Esta acción propagará las coordenadas reales instaladas y el informe topográfico oficial a todos los barrenos hijos derivados de esta perforación madre.')
+                    ->modalSubmitActionLabel('Sincronizar Ahora')
+                    ->action(function (DrillHole $record): void {
+                        app(\App\Observers\DrillHoleObserver::class)->cascadeInstalledAttributesToChildren($record);
+                        $count = $record->children()->count();
+                        Notification::make()
+                            ->title('Datos instalados sincronizados')
+                            ->body("Se han actualizado las coordenadas y reporte topográfico en {$count} barreno(s) hijo(s).")
+                            ->success()
+                            ->send();
+                    }),
 
                 Action::make('validate_gaps')
                     ->label('Validar Gaps')

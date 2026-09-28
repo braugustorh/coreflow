@@ -24,4 +24,9 @@ class Proyecto extends Model
     {
         return $this->hasMany(DrillHole::class);
     }
+
+    public function historicalSamples(): HasMany
+    {
+        return $this->hasMany(HistoricalSample::class);
+    }
 }

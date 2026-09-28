@@ -32,10 +32,16 @@ class EditDrillHole extends EditRecord
      */
     protected function getSavedNotification(): ?Notification
     {
+        $childrenCount = $this->record->children()->count();
+        $syncMessage = '';
+        if ($childrenCount > 0 && $this->record->hasInstalledAttributes()) {
+            $syncMessage = " Se sincronizaron las coordenadas reales e informe con {$childrenCount} barreno(s) hijo(s).";
+        }
+
         return Notification::make()
             ->success()
             ->icon('heroicon-o-pencil-square')
             ->title('Barreno actualizado correctamente')
-            ->body('Los datos del barreno **' . $this->record->nombre_barreno . '** han sido guardados.');
+            ->body('Los datos del barreno **' . $this->record->nombre_barreno . '** han sido guardados.' . $syncMessage);
     }
 }

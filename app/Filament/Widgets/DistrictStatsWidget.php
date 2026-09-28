@@ -26,14 +26,19 @@ class DistrictStatsWidget extends BaseWidget
 
         // 1. Barrenos en Borrador (DrillHoles con muestras en draft en esta sede/proyecto)
         $barrenosBorrador = DrillHole::where('sede_id', $sedeId)
+            ->where('is_historical', false)
             ->when($proyectoId, fn (Builder $query) => $query->where('proyecto_id', $proyectoId))
             ->whereHas('drillHoleSamples', function (Builder $q) {
                 $q->where('status', 'draft');
             })
             ->count();
 
-        // 2. Work Orders
+        // 2. Work Orders (excluyendo cargas históricas)
         $woQuery = WorkOrder::where('sede_id', $sedeId)
+            ->where(function ($q) {
+                $q->whereNull('comments')
+                  ->orWhere('comments', 'not like', '%Histórico%');
+            })
             ->when($proyectoId, function (Builder $query) use ($proyectoId) {
                 $query->whereHas('drillHoleSamples', function ($q) use ($proyectoId) {
                     $q->where('proyecto_id', $proyectoId);

@@ -114,7 +114,9 @@ class ReviewDrillHoleSamples extends Page implements HasForms, HasTable
                     $barrenoId = (int)$this->record;
                     $baseQuery = DrillHoleSample::where('barreno_id', $barrenoId)
                         ->where('status', 'draft')
-                        ->where('capture_source', 'import');
+                        ->where('capture_source', 'import')
+                        ->where('is_archived', false)
+                        ->whereDoesntHave('workOrder', fn($q) => $q->whereHas('drillHoleSamples', fn($s) => $s->where('is_archived', true)));
 
                     $scope     = $data['scope'] ?? 'all';
                     $coreSize  = $data['core_size'];
@@ -393,12 +395,22 @@ class ReviewDrillHoleSamples extends Page implements HasForms, HasTable
             ->recordActions([
                 EditAction::make()
                     ->slideOver()
+                    ->disabled(fn(DrillHoleSample $record): bool => $record->isSent())
+                    ->tooltip(fn(DrillHoleSample $record): ?string => $record->isSent()
+                        ? 'Esta muestra está bloqueada: pertenece a una WO ya enviada al laboratorio.'
+                        : null
+                    )
                     ->form(fn() => DrillHoleSampleResource::getSampleFormSchema())
                     ->after(function (DrillHoleSample $record, SampleValidationService $service) use ($barrenoId) {
                         $service->validateDraftsForBarreno($barrenoId);
                     }),
 
                 DeleteAction::make()
+                    ->disabled(fn(DrillHoleSample $record): bool => $record->isSent())
+                    ->tooltip(fn(DrillHoleSample $record): ?string => $record->isSent()
+                        ? 'No se puede eliminar: esta muestra pertenece a una WO ya enviada al laboratorio.'
+                        : null
+                    )
                     ->after(function (SampleValidationService $service) use ($barrenoId) {
                         $service->validateDraftsForBarreno($barrenoId);
                     }),
@@ -476,6 +488,8 @@ class ReviewDrillHoleSamples extends Page implements HasForms, HasTable
                                         if ($barrenoSedeId) {
                                             $query->where('sede_id', $barrenoSedeId);
                                         }
+                                        // Excluir órdenes ya enviadas al laboratorio
+                                        $query->whereDoesntHave('drillHoleSamples', fn($q) => $q->where('is_archived', true));
                                         return $query->get()->mapWithKeys(
                                             fn($wo) =>
                                             [$wo->id => "{$wo->work_order_code} (muestras: {$wo->samples_quantity})"]
@@ -504,10 +518,31 @@ class ReviewDrillHoleSamples extends Page implements HasForms, HasTable
                             ];
                         })
                         ->action(function (Collection $records, array $data, SampleValidationService $service) use ($barrenoId) {
+                            // Verificar que ninguna de las muestras seleccionadas pertenezca a una WO ya enviada
+                            $lockedSamples = $records->filter(fn(DrillHoleSample $s) => $s->isSent());
+                            if ($lockedSamples->isNotEmpty()) {
+                                Notification::make()
+                                    ->title('Operación no permitida')
+                                    ->body('Una o más muestras seleccionadas ya pertenecen a una Work Order enviada al laboratorio y no pueden reasignarse.')
+                                    ->danger()
+                                    ->send();
+                                return;
+                            }
+
                             $workOrder = WorkOrder::find($data['work_order_id']);
 
                             if (!$workOrder) {
                                 Notification::make()->title('Work Order no encontrada')->danger()->send();
+                                return;
+                            }
+
+                            // Verificar que la WO destino no esté enviada
+                            if ($workOrder->isSent()) {
+                                Notification::make()
+                                    ->title('Work Order bloqueada')
+                                    ->body("La Work Order {$workOrder->work_order_code} ya fue enviada al laboratorio y no puede recibir más muestras.")
+                                    ->danger()
+                                    ->send();
                                 return;
                             }
 
@@ -574,6 +609,17 @@ class ReviewDrillHoleSamples extends Page implements HasForms, HasTable
                         }),
 
                     DeleteBulkAction::make()
+                        ->before(function (Collection $records, DeleteBulkAction $action) {
+                            $locked = $records->filter(fn(DrillHoleSample $s) => $s->isSent());
+                            if ($locked->isNotEmpty()) {
+                                Notification::make()
+                                    ->title('Operación no permitida')
+                                    ->body('No se pueden eliminar muestras que pertenecen a una Work Order ya enviada al laboratorio.')
+                                    ->danger()
+                                    ->send();
+                                $action->halt();
+                            }
+                        })
                         ->after(function (SampleValidationService $service) use ($barrenoId) {
                             $service->validateDraftsForBarreno($barrenoId);
                         }),

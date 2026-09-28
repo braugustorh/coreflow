@@ -33,12 +33,8 @@ class DrillHoleSamplePolicy
             return false;
         }
 
-        $isSent = (bool) $drillHoleSample->is_archived
-            || !empty($drillHoleSample->sent_date)
-            || !empty($drillHoleSample->workOrder?->dispatch_date);
-
-        if ($isSent) {
-            return method_exists($authUser, 'hasRole') && $authUser->hasRole(['super_admin', 'Admin CoreFlow']);
+        if ($drillHoleSample->isSent()) {
+            return false;
         }
 
         return true;
@@ -50,12 +46,8 @@ class DrillHoleSamplePolicy
             return false;
         }
 
-        $isSent = (bool) $drillHoleSample->is_archived
-            || !empty($drillHoleSample->sent_date)
-            || !empty($drillHoleSample->workOrder?->dispatch_date);
-
-        if ($isSent) {
-            return method_exists($authUser, 'hasRole') && $authUser->hasRole(['super_admin', 'Admin CoreFlow']);
+        if ($drillHoleSample->isSent()) {
+            return false;
         }
 
         return true;

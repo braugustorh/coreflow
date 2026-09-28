@@ -514,7 +514,9 @@ class ListDrillHoleSamples extends ListRecords
                     $userId = auth()->id();
                     $baseQuery = DrillHoleSample::where('user_id', $userId)
                         ->where('status', 'draft')
-                        ->where('capture_source', 'import');
+                        ->where('capture_source', 'import')
+                        ->where('is_archived', false)
+                        ->whereDoesntHave('workOrder', fn($q) => $q->whereHas('drillHoleSamples', fn($s) => $s->where('is_archived', true)));
 
                     $scope     = $data['scope'] ?? 'all';
                     $coreSize  = $data['core_size'];
