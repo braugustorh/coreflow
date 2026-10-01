@@ -68,6 +68,7 @@ class ListDrillHoleSamples extends ListRecords
                         ->helperText('Fecha y hora en que se realizó el muestreo de este lote.'),
                 ])
                 ->action(function (array $data, SampleValidationService $service) {
+                    try {
                     $path = Storage::disk('local')->path($data['csv_file']);
 
                     if (!file_exists($path) || !is_readable($path)) {
@@ -356,6 +357,19 @@ class ListDrillHoleSamples extends ListRecords
                         Notification::make()
                             ->title('Validación completada — sin errores detectados.')
                             ->success()
+                            ->send();
+                    }
+                    } catch (\Throwable $e) {
+                        \Illuminate\Support\Facades\Log::error('[ImportDrillHoleSamples] Error inesperado: ' . $e->getMessage(), [
+                            'file'  => $e->getFile(),
+                            'line'  => $e->getLine(),
+                            'trace' => $e->getTraceAsString(),
+                        ]);
+                        Notification::make()
+                            ->title('Error al procesar el archivo')
+                            ->body('Ocurrió un error inesperado: ' . $e->getMessage())
+                            ->danger()
+                            ->persistent()
                             ->send();
                     }
                 }),

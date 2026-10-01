@@ -123,6 +123,7 @@ class ListWorkOrders extends ListRecords
                         ->required(),
                 ])
                 ->action(function (array $data) {
+                    try {
                     $filePath = Storage::disk('local')->path($data['file']);
                     if (!file_exists($filePath) || !is_readable($filePath)) {
                         Notification::make()->title('No se pudo leer el archivo cargado.')->danger()->send();
@@ -304,6 +305,19 @@ class ListWorkOrders extends ListRecords
                         ->success()
                         ->persistent()
                         ->send();
+                    } catch (\Throwable $e) {
+                        \Illuminate\Support\Facades\Log::error('[ImportWorkOrders] Error inesperado: ' . $e->getMessage(), [
+                            'file'  => $e->getFile(),
+                            'line'  => $e->getLine(),
+                            'trace' => $e->getTraceAsString(),
+                        ]);
+                        Notification::make()
+                            ->title('Error al procesar el archivo')
+                            ->body('Ocurrió un error inesperado: ' . $e->getMessage())
+                            ->danger()
+                            ->persistent()
+                            ->send();
+                    }
                 }),
         ];
     }
