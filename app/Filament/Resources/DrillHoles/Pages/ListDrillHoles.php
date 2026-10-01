@@ -72,6 +72,14 @@ class ListDrillHoles extends ListRecords
                 ->label('Carga Masiva de Barrenos')
                 ->icon('heroicon-o-arrow-up-tray')
                 ->color('primary')
+                ->visible(function (): bool {
+                    $user = auth()->user();
+                    if (!$user || $user->hasRole('Visor')) {
+                        return false;
+                    }
+                    return $user->hasRole(['super_admin', 'Admin CoreFlow', 'Supervisor Coreshack', 'Geologo'])
+                        || $user->can('Create:DrillHole');
+                })
                 ->modalHeading('Carga Masiva de Barrenos Históricos')
                 ->modalDescription('Cargue un archivo CSV o Excel con los barrenos históricos. Se clasificarán como Históricos para validación y estarán disponibles en el sistema con su jerarquía madre/hijo.')
                 ->modalSubmitActionLabel('Procesar e Importar')

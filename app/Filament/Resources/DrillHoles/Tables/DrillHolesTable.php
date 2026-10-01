@@ -328,7 +328,15 @@ class DrillHolesTable
                     ->label('Sincronizar Hijos')
                     ->icon('heroicon-o-arrow-path-rounded-square')
                     ->color('info')
-                    ->visible(fn (DrillHole $record): bool => $record->hasChildren() && $record->hasInstalledAttributes())
+                    ->visible(function (DrillHole $record): bool {
+                        $user = auth()->user();
+                        if (!$user || $user->hasRole('Visor')) {
+                            return false;
+                        }
+                        return $user->hasRole(['super_admin', 'Admin CoreFlow', 'Supervisor Coreshack', 'Geologo'])
+                            && $record->hasChildren()
+                            && $record->hasInstalledAttributes();
+                    })
                     ->requiresConfirmation()
                     ->modalHeading(fn (DrillHole $record) => "Sincronizar datos instalados con hijos ({$record->nombre_barreno})")
                     ->modalDescription('Esta acción propagará las coordenadas reales instaladas y el informe topográfico oficial a todos los barrenos hijos derivados de esta perforación madre.')
@@ -349,12 +357,8 @@ class DrillHolesTable
                     ->color('warning')
                     ->visible(function (): bool {
                         $user = auth()->user();
-                        if (!$user) return true;
-                        return $user->hasRole('super_admin')
-                            || $user->hasRole('Administrador')
-                            || $user->hasRole('Admin')
-                            || ($user->is_admin ?? false)
-                            || true; // Garantizar accesibilidad en dev/evaluación
+                        if (!$user) return false;
+                        return $user->hasRole(['super_admin', 'Admin CoreFlow', 'Supervisor Coreshack']);
                     })
                     ->modalHeading(fn (DrillHole $record) => "Validación de Gaps - Barreno: {$record->nombre_barreno}")
                     ->modalDescription('Revise los tramos sin información y seleccione cuáles desea validar asignando la razón justificada.')

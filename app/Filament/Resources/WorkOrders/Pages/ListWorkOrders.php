@@ -89,6 +89,14 @@ class ListWorkOrders extends ListRecords
                 ->label('Carga Masiva de Work Orders')
                 ->icon('heroicon-o-arrow-up-tray')
                 ->color('primary')
+                ->visible(function (): bool {
+                    $user = auth()->user();
+                    if (!$user || $user->hasRole('Visor')) {
+                        return false;
+                    }
+                    return $user->hasRole(['super_admin', 'Admin CoreFlow', 'Supervisor Coreshack'])
+                        || $user->can('Create:WorkOrder');
+                })
                 ->modalHeading('Carga Masiva de Work Orders Históricas')
                 ->modalDescription('Cargue un archivo CSV o Excel con el código de Work Order, fecha (opcional) y distrito (opcional). Los registros se guardarán con estado "Liberado" y comentario "Histórico".')
                 ->modalSubmitActionLabel('Procesar e Importar')

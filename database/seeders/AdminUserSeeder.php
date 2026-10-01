@@ -23,10 +23,12 @@ class AdminUserSeeder extends Seeder
         $user = User::updateOrCreate(
             ['email' => 'admin@admin.net'],
             [
+                'user' => 'admin',
                 'name' => 'Braulio Augusto Reyes Herrera',
                 'password' => Hash::make('@admin.1984'),
                 'email_verified_at' => now(),
                 'sede_id' => $sedeId,
+                'is_active' => true,
             ]
         );
 

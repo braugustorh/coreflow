@@ -28,6 +28,13 @@ class UserForm
                             ->dehydrateStateUsing(fn ($state) => strtoupper($state))
                             ->unique(ignoreRecord: true),
 
+                        TextInput::make('user')
+                            ->label('Usuario de Acceso')
+                            ->prefixIcon('heroicon-m-at-symbol')
+                            ->required()
+                            ->maxLength(100)
+                            ->unique(ignoreRecord: true),
+
                         TextInput::make('name')
                             ->label('Nombre Completo')
                             ->prefixIcon('heroicon-m-user') // Icono dentro del input
@@ -38,7 +45,8 @@ class UserForm
                             ->label('Correo Electrónico')
                             ->prefixIcon('heroicon-m-envelope')
                             ->email()
-                            ->required()
+                            ->nullable()
+                            ->unique(ignoreRecord: true)
                             ->maxLength(255),
 
                         TextInput::make('password')
@@ -46,6 +54,8 @@ class UserForm
                             ->prefixIcon('heroicon-m-lock-closed')
                             ->password()
                             ->revealable() // Agrega el ojito para mostrar/ocultar la contraseña (Gran UX)
+                            ->rule(\Illuminate\Validation\Rules\Password::default())
+                            ->helperText('Mínimo 8 caracteres, debe incluir letras y números.')
                             ->required(fn(string $context): bool => $context === 'create')
                             ->dehydrated(fn($state) => filled($state))
                             ->maxLength(255)
@@ -75,6 +85,12 @@ class UserForm
                             ->preload()
                             ->searchable()
                             ->columnSpan(1),
+
+                        \Filament\Forms\Components\Toggle::make('is_active')
+                            ->label('Usuario Activo')
+                            ->helperText('Permite o bloquea el inicio de sesión del colaborador.')
+                            ->default(true)
+                            ->columnSpanFull(),
                     ]),
             ]);
     }

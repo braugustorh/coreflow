@@ -52,6 +52,14 @@ class ListHistoricalSamples extends ListRecords
                 ->label('Cargar Muestras Históricas')
                 ->icon('heroicon-o-arrow-up-tray')
                 ->color('primary')
+                ->visible(function (): bool {
+                    $user = auth()->user();
+                    if (!$user || $user->hasRole('Visor')) {
+                        return false;
+                    }
+                    return $user->hasRole(['super_admin', 'Admin CoreFlow', 'Supervisor Coreshack', 'Geologo'])
+                        || $user->can('Create:HistoricalSample');
+                })
                 ->modalHeading('Importación Masiva de Muestras Históricas')
                 ->modalDescription('Cargue un archivo CSV o Excel con los folios de muestras históricas. El número de muestra es obligatorio; proyecto y barreno son opcionales.')
                 ->modalSubmitActionLabel('Procesar e Importar')

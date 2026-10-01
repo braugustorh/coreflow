@@ -50,7 +50,6 @@ class HistoricalSampleResource extends Resource
         $user = auth()->user();
         if (!$user) return false;
         return $user->hasRole(['super_admin', 'Admin CoreFlow', 'Supervisor CoreS', 'Geologo'])
-            || $user->can('ViewAny:HistoricalSample')
-            || true;
+            || $user->can('ViewAny:HistoricalSample');
     }
 }

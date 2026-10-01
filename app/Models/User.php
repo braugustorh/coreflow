@@ -30,10 +30,12 @@ class User extends Authenticatable implements FilamentUser
      */
     protected $fillable = [
         'code',
+        'user',
         'name',
         'email',
         'password',
         'sede_id',
+        'is_active',
     ];
 
     /**
@@ -56,6 +58,7 @@ class User extends Authenticatable implements FilamentUser
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'is_active' => 'boolean',
         ];
     }
     // 3. Relación: Un usuario pertenece a una Sede
@@ -75,12 +78,7 @@ class User extends Authenticatable implements FilamentUser
     // 5. Permiso para entrar al panel de Filament
     public function canAccessPanel(Panel $panel): bool
     {
-        // Antes solo permitía a 'super_admin'. Al devolver true, 
-        // Filament permite el login, y luego Filament Shield y las 
-        // Policies se encargan de restringir qué puede ver o hacer cada usuario.
-        return true; 
-        
-        // Si necesitas ser estricto sobre quién entra al panel:
-        // return $this->hasAnyRole(['super_admin', 'Geólogo', 'Operador']);
+        // Solo usuarios marcados como activos pueden ingresar al panel
+        return (bool) ($this->is_active ?? true);
     }
 }
