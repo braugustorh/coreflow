@@ -24,7 +24,7 @@ class HistoricalSampleResource extends Resource
 
     protected static ?string $pluralModelLabel = 'Muestras Históricas';
 
-    protected static string|\UnitEnum|null $navigationGroup = 'Control de Muestreo';
+    protected static string|\UnitEnum|null $navigationGroup = 'Inventario';
 
     protected static ?int $navigationSort = 15;
 
