@@ -60,6 +60,60 @@ class NotificationDiagnostic extends Page
     }
 
     /**
+     * Test 2B: Notificación con Botón enviada por DISPATCH DIRECTO (Sin Cookie)
+     */
+    public function testNotificationWithButtonDirect(): void
+    {
+        $notification = Notification::make()
+            ->title('Barreno no encontrado (Bypass Cookie)')
+            ->body('El barreno ingresado no existe en los registros.')
+            ->danger()
+            ->actions([
+                Action::make('crear')
+                    ->label('Crear Barreno')
+                    ->url(\App\Filament\Resources\DrillHoles\DrillHoleResource::getUrl('index'))
+                    ->button(),
+            ]);
+
+        $this->dispatch('notificationSent', notification: $notification->toArray());
+
+        $this->lastActionMessage = 'Test 2B ejecutado: Notificación con botón enviada DIRECTO vía $this->dispatch("notificationSent"). CERO bytes en Cookie.';
+    }
+
+    public function getSessionDetailsProperty(): array
+    {
+        $all = session()->all();
+        $items = [];
+        $totalRaw = 0;
+
+        foreach ($all as $k => $v) {
+            $ser = serialize($v);
+            $bytes = strlen($ser);
+            $totalRaw += $bytes;
+            $items[] = [
+                'key' => $k,
+                'bytes' => $bytes,
+                'preview' => is_string($v) ? Str::limit($v, 40) : (is_array($v) ? 'Array (' . count($v) . ' items)' : gettype($v)),
+            ];
+        }
+
+        $estimatedEncrypted = $totalRaw > 0 ? strlen(app('encrypter')->encrypt(serialize($all))) : 0;
+
+        return [
+            'total_raw' => $totalRaw,
+            'estimated_encrypted' => $estimatedEncrypted,
+            'is_overflow' => $estimatedEncrypted >= 4000,
+            'items' => $items,
+        ];
+    }
+
+    public function clearSession(): void
+    {
+        session()->forget('filament.notifications');
+        $this->lastActionMessage = 'Se limpiaron las notificaciones acumuladas en sesión.';
+    }
+
+    /**
      * Test 3: Notificación de Advertencia (Warning)
      */
     public function testWarningNotification(): void

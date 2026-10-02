@@ -69,11 +69,22 @@
                 {{-- Test 2 --}}
                 <div style="border: 1px solid #e5e7eb; border-radius: 0.5rem; padding: 1rem; display: flex; flex-direction: column; justify-content: space-between; gap: 0.75rem;">
                     <div>
-                        <div style="font-weight: 600; font-size: 0.95rem; color: #dc2626;">Test 2: Alerta con Botón (Captura Ágil)</div>
-                        <div style="font-size: 0.8rem; color: #6b7280;">Usa <code>Notification::make()->actions([Action::make()->button()])->send()</code> idéntico a Captura Ágil.</div>
+                        <div style="font-weight: 600; font-size: 0.95rem; color: #dc2626;">Test 2: Alerta con Botón (Vía send() tradicional)</div>
+                        <div style="font-size: 0.8rem; color: #6b7280;">Usa <code>Notification::make()->actions([...])->send()</code> (escribe en Cookie).</div>
                     </div>
                     <x-filament::button wire:click="testNotificationWithButton" color="danger">
-                        Lanzar Alerta con Botón
+                        Lanzar Alerta con Botón (Cookie)
+                    </x-filament::button>
+                </div>
+
+                {{-- Test 2B --}}
+                <div style="border: 1px solid #e5e7eb; border-radius: 0.5rem; padding: 1rem; display: flex; flex-direction: column; justify-content: space-between; gap: 0.75rem; background-color: #fef2f2;">
+                    <div>
+                        <div style="font-weight: 600; font-size: 0.95rem; color: #b91c1c;">Test 2B: Alerta con Botón (Bypass Cookie Directo)</div>
+                        <div style="font-size: 0.8rem; color: #6b7280;">Usa <code>$this->dispatch('notificationSent', ...)</code> con el botón de acción (CERO bytes en cookie).</div>
+                    </div>
+                    <x-filament::button wire:click="testNotificationWithButtonDirect" color="danger">
+                        Lanzar con Botón (Directo)
                     </x-filament::button>
                 </div>
 
@@ -176,6 +187,58 @@
                     <span>window.FilamentNotification:</span>
                     <span x-text="hasFilamentNotification ? '✅ Presente' : '❌ Ausente'" :style="hasFilamentNotification ? 'color: #16a34a; font-weight: 600;' : 'color: #dc2626; font-weight: 600;'"></span>
                 </div>
+            </div>
+        </div>
+
+        {{-- Desglose del Tamaño de la Sesión / Cookie --}}
+        @php
+            $sessionInfo = $this->sessionDetails;
+        @endphp
+        <div style="background-color: white; border: 1px solid #e5e7eb; border-radius: 0.75rem; padding: 1.25rem;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+                <h3 style="font-size: 1.125rem; font-weight: 600; color: #111827;">
+                    Análisis de Tamaño de la Sesión / Cookie (Límite: 4,096 bytes)
+                </h3>
+                <x-filament::button wire:click="clearSession" size="xs" color="gray">
+                    Limpiar Notificaciones de Sesión
+                </x-filament::button>
+            </div>
+
+            @if ($sessionInfo['is_overflow'])
+                <div style="padding: 0.75rem 1rem; margin-bottom: 1rem; background-color: #fef2f2; border: 1px solid #f87171; border-radius: 0.5rem; color: #991b1b; font-size: 0.875rem;">
+                    <strong>🚨 ALERTA DE DESBORDAMIENTO:</strong> La cookie encriptada estimada mide <strong>{{ $sessionInfo['estimated_encrypted'] }} bytes</strong> (supera el límite de 4,096 bytes). Por eso el navegador muestra la advertencia y <strong>descarta la cookie con las alertas</strong>.
+                </div>
+            @else
+                <div style="padding: 0.75rem 1rem; margin-bottom: 1rem; background-color: #f0fdf4; border: 1px solid #86efac; border-radius: 0.5rem; color: #166534; font-size: 0.875rem;">
+                    <strong>✅ TAMAÑO SEGURO EN ESTA PÁGINA:</strong> La cookie estimada mide <strong>{{ $sessionInfo['estimated_encrypted'] }} bytes</strong> (dentro del límite de 4,096 bytes).
+                </div>
+            @endif
+
+            <div style="overflow-x: auto;">
+                <table style="width: 100%; font-size: 0.85rem; border-collapse: collapse;">
+                    <thead>
+                        <tr style="border-bottom: 2px solid #e5e7eb; text-align: left; color: #6b7280;">
+                            <th style="padding: 0.5rem;">Clave de Sesión</th>
+                            <th style="padding: 0.5rem;">Tamaño Serializado</th>
+                            <th style="padding: 0.5rem;">Vista Previa</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach ($sessionInfo['items'] as $item)
+                            <tr style="border-bottom: 1px solid #f3f4f6;">
+                                <td style="padding: 0.5rem; font-family: monospace; font-weight: 600; color: #374151;">
+                                    {{ $item['key'] }}
+                                </td>
+                                <td style="padding: 0.5rem; font-weight: 600; {{ $item['bytes'] > 1000 ? 'color: #dc2626;' : 'color: #16a34a;' }}">
+                                    {{ number_format($item['bytes']) }} bytes
+                                </td>
+                                <td style="padding: 0.5rem; color: #6b7280; font-family: monospace; font-size: 0.75rem;">
+                                    {{ $item['preview'] }}
+                                </td>
+                            </tr>
+                        @endforeach
+                    </tbody>
+                </table>
             </div>
         </div>
 
