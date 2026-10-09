@@ -4,8 +4,11 @@ namespace App\Filament\Resources\DrillHoles\Tables;
 
 use App\Models\DrillHole;
 use App\Models\DrillHoleGapValidation;
+use App\Models\User;
+use App\Notifications\GapValidatedNotification;
 use App\Services\GapCalculatorService;
 use Filament\Actions\Action;
+use Illuminate\Support\Facades\Notification as FacadesNotification;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
@@ -447,6 +450,8 @@ class DrillHolesTable
                         }
 
                         $count = 0;
+                        $firstFrom = null;
+                        $lastTo = null;
                         foreach ($selectedGaps as $gap) {
                             DrillHoleGapValidation::create([
                                 'barreno_id'   => $record->id,
@@ -457,7 +462,35 @@ class DrillHolesTable
                                 'validated_by' => auth()->id(),
                                 'validated_at' => now(),
                             ]);
+                            if ($firstFrom === null || $gap['from_depth'] < $firstFrom) {
+                                $firstFrom = $gap['from_depth'];
+                            }
+                            if ($lastTo === null || $gap['to_depth'] > $lastTo) {
+                                $lastTo = $gap['to_depth'];
+                            }
                             $count++;
+                        }
+
+                        // Notificar a los geólogos vinculados a este barreno y su sede
+                        $sampleUserIds = $record->drillHoleSamples()->whereNotNull('user_id')->pluck('user_id')->unique();
+                        $geologistsToNotify = User::whereIn('id', $sampleUserIds)
+                            ->orWhere(function ($q) use ($record) {
+                                $q->whereHas('roles', fn($rq) => $rq->where('name', 'Geologo'))
+                                  ->where('sede_id', $record->sede_id);
+                            })
+                            ->get()
+                            ->unique('id');
+
+                        if ($geologistsToNotify->isNotEmpty()) {
+                            FacadesNotification::send(
+                                $geologistsToNotify,
+                                new GapValidatedNotification(
+                                    $record->nombre_barreno,
+                                    (float) ($firstFrom ?? 0),
+                                    (float) ($lastTo ?? 0),
+                                    auth()->user()?->name ?? 'Administración'
+                                )
+                            );
                         }
 
                         Notification::make()

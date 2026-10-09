@@ -6,6 +6,8 @@ use App\Filament\Resources\DrillHoleSampleResource;
 use App\Filament\Resources\DrillHoleSampleResource\Widgets\DrillHoleSampleStats;
 use App\Models\DrillHoleSample;
 use App\Models\StandardSample;
+use App\Models\User;
+use App\Notifications\BulkImportSummaryNotification;
 use App\Services\SampleValidationService;
 use Filament\Actions;
 use Filament\Forms;
@@ -14,6 +16,7 @@ use Filament\Forms\Components\FileUpload;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\ListRecords;
 use Filament\Schemas\Components\Utilities\Get;
+use Illuminate\Support\Facades\Notification as FacadesNotification;
 use Illuminate\Support\Facades\Storage;
 
 class ListDrillHoleSamples extends ListRecords
@@ -359,6 +362,26 @@ class ListDrillHoleSamples extends ListRecords
                             ->success()
                             ->send();
                     }
+
+                    // Notificación persistente a campana
+                    $importUsers = User::where(function ($q) {
+                        $q->whereHas('roles', fn($rq) => $rq->whereIn('name', ['super_admin', 'Admin CoreFlow', 'Administrador', 'Admin']))
+                          ->orWhere('id', auth()->id());
+                    })->get()->unique('id');
+
+                    if ($importUsers->isNotEmpty()) {
+                        FacadesNotification::send(
+                            $importUsers,
+                            new BulkImportSummaryNotification(
+                                'Muestras',
+                                $importedCount,
+                                $errorsCount,
+                                '/admin/drill-hole-samples'
+                            )
+                        );
+                    }
+
+                    $this->dispatch('databaseNotificationsSent');
                     } catch (\Throwable $e) {
                         \Illuminate\Support\Facades\Log::error('[ImportDrillHoleSamples] Error inesperado: ' . $e->getMessage(), [
                             'file'  => $e->getFile(),

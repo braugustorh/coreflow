@@ -3,6 +3,8 @@
 namespace App\Filament\Pages;
 
 use App\Models\SampleSetting;
+use App\Models\User;
+use App\Notifications\SampleSettingsUpdatedNotification;
 use BackedEnum;
 use Filament\Forms\Components\TextInput;
 use Filament\Schemas\Components\Grid;
@@ -13,8 +15,8 @@ use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
-
 use Filament\Schemas\Components\Utilities\Get;
+use Illuminate\Support\Facades\Notification as FacadesNotification;
 
 class SamplesSettings extends Page implements HasForms
 {
@@ -100,7 +102,7 @@ class SamplesSettings extends Page implements HasForms
                                     ->minValue(0.5)
                                     ->maxValue(50.0)
                                     ->required()
-                                    ->rules(['gt:min_sample_weight'])
+                                    ->rule(fn (Get $get) => 'gt:' . ((float) ($get('min_sample_weight') ?: 0.01)))
                                     ->helperText('Límite superior permitido para el peso de una muestra individual.')
                                     ->prefixIcon('heroicon-o-beaker'),
                             ]),
@@ -248,5 +250,19 @@ class SamplesSettings extends Page implements HasForms
             ->body('Los límites de peso de muestras, costales y factores de estimación fueron actualizados correctamente.')
             ->success()
             ->send();
+
+        // Notificación persistente a campana para Administradores
+        $adminUsers = User::whereHas('roles', function ($q) {
+            $q->whereIn('name', ['super_admin', 'Admin CoreFlow', 'Administrador', 'Admin']);
+        })->get();
+
+        if ($adminUsers->isNotEmpty()) {
+            FacadesNotification::send(
+                $adminUsers,
+                new SampleSettingsUpdatedNotification(auth()->user()?->name ?? 'Usuario')
+            );
+        }
+
+        $this->dispatch('databaseNotificationsSent');
     }
 }

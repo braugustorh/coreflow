@@ -135,13 +135,19 @@ class NotificationDiagnostic extends Page
         $user = auth()->user();
 
         if ($user) {
-            Notification::make()
-                ->title('Notificación en Base de Datos')
-                ->body('Esta notificación se guardó directamente en la campana de alertas.')
-                ->info()
-                ->sendToDatabase($user);
+            $notification = Notification::make()
+                ->title('Notificación en Campana')
+                ->body('Esta notificación se guardó inmediatamente en la base de datos.')
+                ->icon('heroicon-o-bell')
+                ->info();
 
-            $this->lastActionMessage = 'Test 4 ejecutado: Notificación guardada en base de datos para ' . $user->name;
+            // notifyNow() escribe directamente en la tabla 'notifications' sin esperar un queue worker
+            $user->notifyNow($notification->toDatabase());
+
+            // Dispara el evento que refresca el contador de la campana en el topbar al instante
+            $this->dispatch('databaseNotificationsSent');
+
+            $this->lastActionMessage = 'Test 4 ejecutado: Notificación guardada en base de datos para ' . $user->name . ' y campana actualizada.';
         } else {
             $this->lastActionMessage = 'Test 4 error: No hay usuario autenticado.';
         }

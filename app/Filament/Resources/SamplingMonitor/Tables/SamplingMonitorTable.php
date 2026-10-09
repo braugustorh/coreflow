@@ -3,7 +3,9 @@
 namespace App\Filament\Resources\SamplingMonitor\Tables;
 
 use App\Models\DrillHoleSample;
+use App\Models\User;
 use App\Models\WorkOrder;
+use App\Notifications\WorkOrderDispatchedNotification;
 use App\Services\AlsFormFillService;
 use App\Services\GapCalculatorService;
 use Carbon\Carbon;
@@ -21,6 +23,7 @@ use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Notification as FacadesNotification;
 use Illuminate\Support\HtmlString;
 
 class SamplingMonitorTable
@@ -583,6 +586,39 @@ class SamplingMonitorTable
 
                         // Marcar la WO como enviada (fuente de verdad para restricciones de edición)
                         $record->update(['sent_to_lab' => true]);
+
+                        // Enviar notificaciones de campana
+                        $samplesCount = $record->drillHoleSamples()->count();
+                        $dispatcherName = auth()->user()?->name ?? 'Supervisor';
+
+                        // 1. A los geólogos asociados a las muestras de esta WO (informativo sin botón al monitor)
+                        $geologistIds = $record->drillHoleSamples()->whereNotNull('user_id')->pluck('user_id')->unique();
+                        if ($geologistIds->isNotEmpty()) {
+                            $geologistUsers = User::whereIn('id', $geologistIds)->get();
+                            if ($geologistUsers->isNotEmpty()) {
+                                FacadesNotification::send(
+                                    $geologistUsers,
+                                    new WorkOrderDispatchedNotification($record->work_order_code, $samplesCount, $dispatcherName, false)
+                                );
+                            }
+                        }
+
+                        // 2. A la Administradora Core Shack y Super Admin (con botón al Monitor)
+                        $adminUsers = User::where(function ($q) {
+                            $q->whereHas('roles', function ($rq) {
+                                $rq->whereIn('name', ['super_admin', 'Admin CoreFlow', 'Administrador', 'Admin']);
+                            })->orWhere('id', 1);
+                        })->get()->unique('id');
+
+                        if ($adminUsers->isNotEmpty()) {
+                            FacadesNotification::send(
+                                $adminUsers,
+                                new WorkOrderDispatchedNotification($record->work_order_code, $samplesCount, $dispatcherName, true)
+                            );
+                        }
+
+                        // Refrescar campana en vivo para el usuario actual si es admin
+                        $action->getLivewire()?->dispatch('databaseNotificationsSent');
 
                         Notification::make()
                             ->title('Orden Enviada al Laboratorio')

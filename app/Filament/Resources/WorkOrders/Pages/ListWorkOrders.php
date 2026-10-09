@@ -4,7 +4,9 @@ namespace App\Filament\Resources\WorkOrders\Pages;
 
 use App\Filament\Resources\WorkOrders\WorkOrderResource;
 use App\Models\Sede;
+use App\Models\User;
 use App\Models\WorkOrder;
+use App\Notifications\BulkImportSummaryNotification;
 use Carbon\Carbon;
 use Filament\Actions\Action;
 use Filament\Actions\CreateAction;
@@ -16,6 +18,7 @@ use Filament\Schemas\Components\Tabs\Tab;
 use Filament\Support\Enums\Width;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Notification as FacadesNotification;
 use Illuminate\Support\Facades\Storage;
 use PhpOffice\PhpSpreadsheet\IOFactory;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -305,6 +308,26 @@ class ListWorkOrders extends ListRecords
                         ->success()
                         ->persistent()
                         ->send();
+
+                    // Notificación persistente a campana
+                    $importUsers = User::where(function ($q) {
+                        $q->whereHas('roles', fn($rq) => $rq->whereIn('name', ['super_admin', 'Admin CoreFlow', 'Administrador', 'Admin']))
+                          ->orWhere('id', auth()->id());
+                    })->get()->unique('id');
+
+                    if ($importUsers->isNotEmpty()) {
+                        FacadesNotification::send(
+                            $importUsers,
+                            new BulkImportSummaryNotification(
+                                'Work Orders',
+                                $importedCount,
+                                $alreadyExistsCount + $duplicateInBatch,
+                                '/admin/work-orders'
+                            )
+                        );
+                    }
+
+                    $this->dispatch('databaseNotificationsSent');
                     } catch (\Throwable $e) {
                         \Illuminate\Support\Facades\Log::error('[ImportWorkOrders] Error inesperado: ' . $e->getMessage(), [
                             'file'  => $e->getFile(),

@@ -6,7 +6,10 @@ use App\Filament\Resources\DrillHoles\DrillHoleResource;
 use App\Models\DrillHole;
 use App\Models\Proyecto;
 use App\Models\Sede;
+use App\Models\User;
+use App\Notifications\BulkImportSummaryNotification;
 use Filament\Actions\Action;
+use Illuminate\Support\Facades\Notification as FacadesNotification;
 use Filament\Actions\CreateAction;
 use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Select;
@@ -359,6 +362,28 @@ class ListDrillHoles extends ListRecords
                             $importedCount++;
                         }
                     });
+
+                    $skippedTotal = $alreadyExistsCount + $duplicateInBatch;
+
+                    // Enviar notificación a la campana (usuario que importó + administradores)
+                    $importUsers = User::where(function ($q) {
+                        $q->whereHas('roles', fn($rq) => $rq->whereIn('name', ['super_admin', 'Admin CoreFlow', 'Administrador', 'Admin']))
+                          ->orWhere('id', auth()->id());
+                    })->get()->unique('id');
+
+                    if ($importUsers->isNotEmpty()) {
+                        FacadesNotification::send(
+                            $importUsers,
+                            new BulkImportSummaryNotification(
+                                'Barrenos',
+                                $importedCount,
+                                $skippedTotal,
+                                '/admin/drill-holes'
+                            )
+                        );
+                    }
+
+                    $this->dispatch('databaseNotificationsSent');
 
                     Notification::make()
                         ->title("Carga de Barrenos completada")
