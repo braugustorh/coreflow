@@ -194,11 +194,14 @@ class QcPhotoEvidence extends Page
     #[On('qc-photos-updated')]
     public function onQcPhotosUpdated(): void
     {
-        $current = $this->selectedSample;
+        $current = $this->selectedSampleId
+            ? DrillHoleSample::with('qcPhotos')->find($this->selectedSampleId)
+            : null;
+
         if ($current && $current->hasCompleteQcPhotos()) {
             Notification::make()
-                ->title('¡Muestra completada!')
-                ->body("La muestra {$current->sample_number} ya cuenta con sus 2 fotos obligatorias.")
+                ->title('Muestra documentada con éxito')
+                ->body("La muestra {$current->sample_number} cuenta con sus 2 fotografías QC registradas.")
                 ->success()
                 ->send();
 

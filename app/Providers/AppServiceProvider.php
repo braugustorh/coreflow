@@ -3,6 +3,7 @@
 namespace App\Providers;
 
 use Illuminate\Support\ServiceProvider;
+use Illuminate\Support\Facades\URL;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -28,5 +29,9 @@ class AppServiceProvider extends ServiceProvider
                 ->letters()
                 ->numbers();
         });
+
+        if (app()->environment('local') || str_contains(request()->getHost(), 'ngrok')) {
+            URL::forceScheme('https');
+        }
     }
 }

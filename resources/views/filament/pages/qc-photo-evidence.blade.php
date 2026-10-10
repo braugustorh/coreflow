@@ -1,89 +1,454 @@
 <x-filament-panels::page>
-    {{-- Importación de Tailwind CSS solicitada por el usuario para renderizado completo sin restricciones de Filament --}}
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-        if (typeof tailwind !== 'undefined') {
-            tailwind.config = {
-                darkMode: 'class',
-                corePlugins: {
-                    preflight: false,
-                },
-                theme: {
-                    extend: {
-                        colors: {
-                            primary: {
-                                50: '#fffbeb',
-                                100: '#fef3c7',
-                                200: '#fde68a',
-                                300: '#fcd34d',
-                                400: '#fbbf24',
-                                500: '#f59e0b',
-                                600: '#d97706',
-                                700: '#b45309',
-                                800: '#92400e',
-                                900: '#78350f',
-                                950: '#451a03',
-                            }
-                        }
-                    }
-                }
-            };
-        }
-    </script>
-
-    @if(file_exists(public_path('build/manifest.json')))
-        @vite(['resources/css/app.css'])
-    @endif
-
     <style>
-        /* Scoped protections for icons and layout in QC Evidence Module */
-        .qc-evidence-page svg {
+        /* ===== QC Evidence Page - Senior UX Scoped Styles ===== */
+        .qce-page {
+            display: flex;
+            flex-direction: column;
+            gap: 1.25rem;
+            width: 100%;
+            font-family: inherit;
+        }
+
+        .qce-page svg {
             display: inline-block;
             vertical-align: middle;
             flex-shrink: 0;
-            max-width: 100%;
         }
-        .qc-evidence-page svg.w-3\.5,
-        .qc-evidence-page svg.h-3\.5,
-        .qc-evidence-page .icon-sm {
-            width: 14px !important;
-            height: 14px !important;
-            min-width: 14px !important;
-            min-height: 14px !important;
+
+        /* Card panels */
+        .qce-card {
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 0.875rem;
+            padding: 1.25rem;
+            box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.04);
         }
-        .qc-evidence-page svg.w-4,
-        .qc-evidence-page svg.h-4,
-        .qc-evidence-page .icon-md {
-            width: 16px !important;
-            height: 16px !important;
-            min-width: 16px !important;
-            min-height: 16px !important;
+        .dark .qce-card {
+            background: #111827;
+            border-color: #1f2937;
         }
-        .qc-evidence-page svg.w-8,
-        .qc-evidence-page svg.h-8,
-        .qc-evidence-page .icon-lg {
-            width: 32px !important;
-            height: 32px !important;
-            min-width: 32px !important;
-            min-height: 32px !important;
+
+        /* Filters Layout */
+        .qce-filters-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 1rem;
+            align-items: end;
         }
-        .qc-sample-card-btn {
+        @media (min-width: 768px) {
+            .qce-filters-grid {
+                grid-template-columns: repeat(3, 1fr);
+            }
+        }
+
+        .qce-form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 0.375rem;
+        }
+        .qce-form-label {
+            font-size: 0.75rem;
+            font-weight: 700;
+            color: #334155;
+            letter-spacing: -0.01em;
+        }
+        .dark .qce-form-label {
+            color: #94a3b8;
+        }
+        .qce-select {
+            width: 100%;
+            font-size: 0.875rem;
+            border-radius: 0.5rem;
+            border: 1px solid #cbd5e1;
+            background-color: #ffffff;
+            color: #0f172a;
+            padding: 0.5rem 0.75rem;
+            outline: none;
+            transition: border-color 0.15s, box-shadow 0.15s;
+        }
+        .dark .qce-select {
+            border-color: #334155;
+            background-color: #1e293b;
+            color: #f8fafc;
+        }
+        .qce-select:focus {
+            border-color: #6366f1;
+            box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2);
+        }
+
+        /* Filter Tabs */
+        .qce-tabs {
+            display: flex;
+            align-items: center;
+            gap: 0.25rem;
+            background: #f1f5f9;
+            padding: 0.25rem;
+            border-radius: 0.5rem;
+        }
+        .dark .qce-tabs {
+            background: #1e293b;
+        }
+        .qce-tab-btn {
+            flex: 1;
+            padding: 0.45rem 0.5rem;
+            font-size: 0.75rem;
+            font-weight: 700;
+            border-radius: 0.375rem;
+            text-align: center;
+            border: none;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+        .qce-tab-btn.active-pending {
+            background: #ffffff;
+            color: #d97706;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+        }
+        .dark .qce-tab-btn.active-pending {
+            background: #334155;
+            color: #fbbf24;
+        }
+        .qce-tab-btn.active-all {
+            background: #ffffff;
+            color: #0f172a;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+        }
+        .dark .qce-tab-btn.active-all {
+            background: #334155;
+            color: #f8fafc;
+        }
+        .qce-tab-btn.active-completed {
+            background: #ffffff;
+            color: #059669;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+        }
+        .dark .qce-tab-btn.active-completed {
+            background: #334155;
+            color: #34d399;
+        }
+        .qce-tab-btn.inactive {
+            background: transparent;
+            color: #64748b;
+        }
+        .dark .qce-tab-btn.inactive {
+            color: #94a3b8;
+        }
+        .qce-tab-btn.inactive:hover {
+            color: #0f172a;
+        }
+        .dark .qce-tab-btn.inactive:hover {
+            color: #f8fafc;
+        }
+
+        /* Progress Bar */
+        .qce-progress-wrap {
+            margin-top: 0.75rem;
+            padding-top: 0.75rem;
+            border-top: 1px solid #f1f5f9;
+        }
+        .dark .qce-progress-wrap {
+            border-color: #1e293b;
+        }
+        .qce-progress-info {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.75rem;
+            margin-bottom: 0.375rem;
+            color: #475569;
+        }
+        .dark .qce-progress-info {
+            color: #94a3b8;
+        }
+        .qce-progress-bar-bg {
+            width: 100%;
+            background: #e2e8f0;
+            border-radius: 9999px;
+            height: 0.5rem;
+            overflow: hidden;
+        }
+        .dark .qce-progress-bar-bg {
+            background: #334155;
+        }
+        .qce-progress-bar-fill {
+            height: 100%;
+            border-radius: 9999px;
+            transition: width 0.4s ease;
+        }
+        .qce-progress-amber {
+            background: #f59e0b;
+        }
+        .qce-progress-green {
+            background: #10b981;
+        }
+
+        /* Main 2-column Grid */
+        .qce-main-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 1.25rem;
+            align-items: start;
+        }
+        @media (min-width: 1024px) {
+            .qce-main-grid {
+                grid-template-columns: 340px 1fr;
+            }
+        }
+        @media (min-width: 1280px) {
+            .qce-main-grid {
+                grid-template-columns: 380px 1fr;
+            }
+        }
+
+        /* Sample List (Left Column) */
+        .qce-sample-list-card {
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 0.875rem;
+            padding: 0.875rem;
+            box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.04);
+            max-height: 720px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+        .dark .qce-sample-list-card {
+            background: #111827;
+            border-color: #1f2937;
+        }
+        .qce-sample-list-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.25rem 0.5rem;
+            font-size: 0.7rem;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: #64748b;
+        }
+        .dark .qce-sample-list-header {
+            color: #94a3b8;
+        }
+        .qce-sample-items-container {
+            display: flex;
+            flex-direction: column;
+            gap: 0.375rem;
+        }
+
+        /* Sample Button Card */
+        .qce-sample-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            width: 100%;
+            padding: 0.75rem;
+            border-radius: 0.625rem;
+            border: 1px solid #e2e8f0;
+            background: #ffffff;
             cursor: pointer;
             text-align: left;
-            width: 100%;
+            transition: all 0.15s ease;
+        }
+        .dark .qce-sample-item {
+            background: #111827;
+            border-color: #1f2937;
+        }
+        .qce-sample-item:hover {
+            background: #f8fafc;
+            border-color: #cbd5e1;
+        }
+        .dark .qce-sample-item:hover {
+            background: #1e293b;
+            border-color: #334155;
+        }
+        .qce-sample-item.selected {
+            border-color: #6366f1;
+            background: #eef2ff;
+            box-shadow: 0 0 0 1px #6366f1;
+        }
+        .dark .qce-sample-item.selected {
+            border-color: #818cf8;
+            background: rgba(99, 102, 241, 0.2);
+        }
+
+        .qce-sample-number {
+            font-size: 0.875rem;
+            font-weight: 800;
+            color: #0f172a;
+        }
+        .dark .qce-sample-number {
+            color: #f8fafc;
+        }
+        .qce-sample-meta {
+            font-size: 0.7rem;
+            color: #64748b;
+            margin-top: 0.125rem;
+        }
+        .dark .qce-sample-meta {
+            color: #94a3b8;
+        }
+
+        /* Badges */
+        .qce-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.3rem;
+            padding: 0.15rem 0.5rem;
+            border-radius: 9999px;
+            font-size: 0.7rem;
+            font-weight: 700;
+        }
+        .qce-badge-std {
+            background: #eff6ff;
+            color: #1d4ed8;
+            border: 1px solid #bfdbfe;
+        }
+        .dark .qce-badge-std {
+            background: rgba(30, 58, 138, 0.4);
+            color: #93c5fd;
+            border-color: #1e40af;
+        }
+        .qce-badge-blk {
+            background: #faf5ff;
+            color: #7e22ce;
+            border: 1px solid #e9d5ff;
+        }
+        .dark .qce-badge-blk {
+            background: rgba(88, 28, 135, 0.4);
+            color: #d8b4fe;
+            border-color: #6b21a8;
+        }
+        .qce-badge-complete {
+            background: #ecfdf5;
+            color: #065f46;
+            border: 1px solid #a7f3d0;
+        }
+        .dark .qce-badge-complete {
+            background: rgba(6, 78, 59, 0.4);
+            color: #6ee7b7;
+            border-color: #047857;
+        }
+        .qce-badge-pending {
+            background: #fffbeb;
+            color: #92400e;
+            border: 1px solid #fde68a;
+        }
+        .dark .qce-badge-pending {
+            background: rgba(120, 53, 15, 0.4);
+            color: #fde68a;
+            border-color: #b45309;
+        }
+
+        /* Top Action Buttons */
+        .qce-btn-nav {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.375rem;
+            padding: 0.45rem 0.85rem;
+            font-size: 0.75rem;
+            font-weight: 600;
+            border-radius: 0.5rem;
+            border: 1px solid #cbd5e1;
+            background: #ffffff;
+            color: #334155;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+        .dark .qce-btn-nav {
+            background: #1e293b;
+            border-color: #334155;
+            color: #e2e8f0;
+        }
+        .qce-btn-nav:hover {
+            background: #f8fafc;
+        }
+        .dark .qce-btn-nav:hover {
+            background: #334155;
+        }
+
+        .qce-btn-primary {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.375rem;
+            padding: 0.45rem 0.85rem;
+            font-size: 0.75rem;
+            font-weight: 600;
+            border-radius: 0.5rem;
+            border: none;
+            background: #4f46e5;
+            color: #ffffff;
+            cursor: pointer;
+            box-shadow: 0 1px 2px rgba(79, 70, 229, 0.2);
+            transition: all 0.15s ease;
+        }
+        .qce-btn-primary:hover {
+            background: #4338ca;
+        }
+
+        .qce-btn-advance {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.45rem 1rem;
+            font-size: 0.75rem;
+            font-weight: 700;
+            border-radius: 0.5rem;
+            border: none;
+            background: #0f172a;
+            color: #ffffff;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+        .dark .qce-btn-advance {
+            background: #f8fafc;
+            color: #0f172a;
+        }
+        .qce-btn-advance:hover {
+            background: #1e293b;
+        }
+        .dark .qce-btn-advance:hover {
+            background: #ffffff;
+        }
+
+        /* Empty State */
+        .qce-empty-state {
+            padding: 3.5rem 1.5rem;
+            text-align: center;
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 0.875rem;
+        }
+        .dark .qce-empty-state {
+            background: #111827;
+            border-color: #1f2937;
+        }
+        .qce-empty-icon-wrap {
+            margin: 0 auto 0.875rem auto;
+            display: flex;
+            width: 3.5rem;
+            height: 3.5rem;
+            align-items: center;
+            justify-content: center;
+            border-radius: 9999px;
+            background: #ecfdf5;
+            color: #059669;
+        }
+        .dark .qce-empty-icon-wrap {
+            background: rgba(6, 78, 59, 0.35);
+            color: #34d399;
         }
     </style>
 
-    <div class="qc-evidence-page space-y-6">
+    <div class="qce-page">
         {{-- Barra Superior de Filtros --}}
-        <div class="p-4 bg-white dark:bg-gray-900 rounded-xl shadow-sm border border-gray-200 dark:border-gray-800 space-y-4">
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+        <div class="qce-card">
+            <div class="qce-filters-grid">
                 {{-- Selector Barreno --}}
-                <div>
-                    <label class="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
-                        Filtrar por Barreno
-                    </label>
-                    <select wire:model.live="barrenoId" class="w-full text-sm rounded-lg border-gray-300 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100 focus:ring-primary-500 focus:border-primary-500 py-2 px-3">
+                <div class="qce-form-group">
+                    <label class="qce-form-label">Filtrar por Barreno</label>
+                    <select wire:model.live="barrenoId" class="qce-select">
                         <option value="">— Todos los Barrenos —</option>
                         @foreach($this->barrenosOptions as $b)
                             <option value="{{ $b->id }}">{{ $b->nombre_barreno }}</option>
@@ -92,11 +457,9 @@
                 </div>
 
                 {{-- Selector Work Order --}}
-                <div>
-                    <label class="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
-                        Filtrar por Work Order
-                    </label>
-                    <select wire:model.live="workOrderId" class="w-full text-sm rounded-lg border-gray-300 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100 focus:ring-primary-500 focus:border-primary-500 py-2 px-3">
+                <div class="qce-form-group">
+                    <label class="qce-form-label">Filtrar por Work Order</label>
+                    <select wire:model.live="workOrderId" class="qce-select">
                         <option value="">— Todas las Órdenes —</option>
                         @foreach($this->workOrdersOptions as $wo)
                             <option value="{{ $wo->id }}">{{ $wo->work_order_code }}</option>
@@ -105,20 +468,20 @@
                 </div>
 
                 {{-- Tabs de Estado --}}
-                <div class="flex items-center gap-1 bg-gray-100 dark:bg-gray-800 p-1 rounded-lg">
+                <div class="qce-tabs">
                     <button type="button"
                             wire:click="$set('filter', 'pending')"
-                            class="flex-1 py-1.5 px-3 text-xs font-semibold rounded-md transition {{ $filter === 'pending' ? 'bg-white dark:bg-gray-700 text-amber-600 dark:text-amber-400 shadow-sm' : 'text-gray-600 dark:text-gray-400 hover:text-gray-900' }}">
+                            class="qce-tab-btn {{ $filter === 'pending' ? 'active-pending' : 'inactive' }}">
                         Pendientes ({{ $this->stats['pending'] }})
                     </button>
                     <button type="button"
                             wire:click="$set('filter', 'all')"
-                            class="flex-1 py-1.5 px-3 text-xs font-semibold rounded-md transition {{ $filter === 'all' ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm' : 'text-gray-600 dark:text-gray-400 hover:text-gray-900' }}">
+                            class="qce-tab-btn {{ $filter === 'all' ? 'active-all' : 'inactive' }}">
                         Todas ({{ $this->stats['total'] }})
                     </button>
                     <button type="button"
                             wire:click="$set('filter', 'completed')"
-                            class="flex-1 py-1.5 px-3 text-xs font-semibold rounded-md transition {{ $filter === 'completed' ? 'bg-white dark:bg-gray-700 text-emerald-600 dark:text-emerald-400 shadow-sm' : 'text-gray-600 dark:text-gray-400 hover:text-gray-900' }}">
+                            class="qce-tab-btn {{ $filter === 'completed' ? 'active-completed' : 'inactive' }}">
                         Listas ({{ $this->stats['completed'] }})
                     </button>
                 </div>
@@ -126,19 +489,19 @@
 
             {{-- Barra de Progreso --}}
             @if($this->stats['total'] > 0)
-                <div class="pt-2 border-t border-gray-100 dark:border-gray-800">
-                    <div class="flex items-center justify-between text-xs mb-1">
-                        <span class="text-gray-600 dark:text-gray-400">
+                <div class="qce-progress-wrap">
+                    <div class="qce-progress-info">
+                        <span>
                             Progreso de documentación fotográfica QC:
-                            <strong class="text-gray-900 dark:text-gray-100">{{ $this->stats['completed'] }} de {{ $this->stats['total'] }} muestras</strong>
+                            <strong style="color: #0f172a;" class="dark:text-white">{{ $this->stats['completed'] }} de {{ $this->stats['total'] }} muestras</strong>
                         </span>
-                        <span class="font-bold {{ $this->stats['percentage'] === 100 ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400' }}">
+                        <span style="font-weight: 800; color: {{ $this->stats['percentage'] === 100 ? '#10b981' : '#d97706' }};">
                             {{ $this->stats['percentage'] }}%
                         </span>
                     </div>
-                    <div class="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2 overflow-hidden">
-                        <div class="h-2 rounded-full transition-all duration-500 {{ $this->stats['percentage'] === 100 ? 'bg-emerald-500' : 'bg-amber-500' }}"
-                             style="width: {{ $this->stats['percentage'] }}%"></div>
+                    <div class="qce-progress-bar-bg">
+                        <div class="qce-progress-bar-fill {{ $this->stats['percentage'] === 100 ? 'qce-progress-green' : 'qce-progress-amber' }}"
+                             style="width: {{ $this->stats['percentage'] }}%;"></div>
                     </div>
                 </div>
             @endif
@@ -146,18 +509,18 @@
 
         {{-- Vista Principal --}}
         @if($this->samples->isEmpty())
-            <div class="p-12 text-center bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800">
-                <div class="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-950/50 mb-3">
-                    <x-heroicon-o-check-badge class="w-8 h-8 text-emerald-600 dark:text-emerald-400" style="width: 32px; height: 32px;" />
+            <div class="qce-empty-state">
+                <div class="qce-empty-icon-wrap">
+                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 28px; height: 28px;"><path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/><path d="m9 12 2 2 4-4"/></svg>
                 </div>
-                <h3 class="text-base font-semibold text-gray-900 dark:text-gray-100">
+                <h3 style="font-size: 1.05rem; font-weight: 800; color: #0f172a;" class="dark:text-white">
                     @if($filter === 'pending')
                         ¡No hay muestras de control pendientes!
                     @else
                         No se encontraron muestras con los filtros seleccionados
                     @endif
                 </h3>
-                <p class="text-xs text-gray-500 dark:text-gray-400 mt-1 max-w-sm mx-auto">
+                <p style="font-size: 0.775rem; color: #64748b; margin-top: 0.25rem; max-width: 26rem; margin-left: auto; margin-right: auto;" class="dark:text-gray-400">
                     @if($filter === 'pending')
                         Todas las muestras de control en este alcance tienen sus 2 fotografías registradas.
                     @else
@@ -165,45 +528,46 @@
                     @endif
                 </p>
                 @if($filter === 'pending' && $this->stats['total'] > 0)
-                    <div class="mt-4">
+                    <div style="margin-top: 1rem;">
                         <button type="button"
                                 wire:click="$set('filter', 'all')"
-                                class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 text-gray-800 dark:text-gray-200 transition">
-                            <x-heroicon-o-eye class="w-4 h-4" style="width: 16px; height: 16px;" />
-                            Ver todas las muestras
+                                class="qce-btn-nav">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 15px; height: 15px;"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+                            <span>Ver todas las muestras</span>
                         </button>
                     </div>
                 @endif
             </div>
         @else
-            <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-                {{-- Columna Izquierda: Lista de Muestras (Selector) --}}
-                <div class="lg:col-span-4 bg-white dark:bg-gray-900 rounded-xl p-3 border border-gray-200 dark:border-gray-800 shadow-sm max-h-[750px] overflow-y-auto space-y-2">
-                    <div class="flex items-center justify-between px-2 py-1 text-xs font-bold text-gray-500 uppercase tracking-wider">
+            <div class="qce-main-grid">
+                {{-- Columna Izquierda: Lista de Muestras --}}
+                <div class="qce-sample-list-card">
+                    <div class="qce-sample-list-header">
                         <span>Muestras ({{ $this->samples->count() }})</span>
                         <span>Estado</span>
                     </div>
 
-                    <div class="space-y-1.5">
+                    <div class="qce-sample-items-container">
                         @foreach($this->samples as $sample)
                             @php
                                 $photoCount = $sample->qc_photos_count ?? $sample->qcPhotos->count();
                                 $isCompleted = $photoCount >= 2;
                                 $isSelected = $sample->id === $this->selectedSampleId;
+                                $isStd = str_contains(strtoupper((string) $sample->control_type), 'STD');
                             @endphp
                             <button type="button"
                                     wire:click="selectSample({{ $sample->id }})"
-                                    class="qc-sample-card-btn p-3 rounded-lg border transition flex items-center justify-between {{ $isSelected ? 'border-amber-500 bg-amber-50/70 dark:bg-amber-950/40 ring-1 ring-amber-500' : 'border-gray-200 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/60' }}">
-                                <div class="space-y-0.5">
-                                    <div class="flex items-center gap-2">
-                                        <span class="font-bold text-sm text-gray-900 dark:text-gray-100">
+                                    class="qce-sample-item {{ $isSelected ? 'selected' : '' }}">
+                                <div style="display: flex; flex-direction: column; gap: 0.125rem;">
+                                    <div style="display: flex; align-items: center; gap: 0.5rem;">
+                                        <span class="qce-sample-number">
                                             {{ $sample->sample_number }}
                                         </span>
-                                        <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded {{ str_contains(strtoupper($sample->control_type), 'STD') ? 'bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300' : 'bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300' }}">
+                                        <span class="qce-badge {{ $isStd ? 'qce-badge-std' : 'qce-badge-blk' }}">
                                             {{ $sample->standardSample?->standard_name ?? $sample->control_type }}
                                         </span>
                                     </div>
-                                    <div class="text-[11px] text-gray-500 dark:text-gray-400">
+                                    <div class="qce-sample-meta">
                                         <span>{{ $sample->barreno?->nombre_barreno ?? 'Sin barreno' }}</span>
                                         @if($sample->workOrder)
                                             <span> • WO: {{ $sample->workOrder->work_order_code }}</span>
@@ -211,12 +575,12 @@
                                     </div>
                                 </div>
 
-                                <div class="flex-shrink-0 ml-2">
-                                    <span class="inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full {{ $isCompleted ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300' : 'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300' }}">
+                                <div style="flex-shrink: 0; margin-left: 0.5rem;">
+                                    <span class="qce-badge {{ $isCompleted ? 'qce-badge-complete' : 'qce-badge-pending' }}">
                                         @if($isCompleted)
-                                            <x-heroicon-s-check-circle class="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" style="width: 14px; height: 14px; min-width: 14px; min-height: 14px; display: inline-block;" />
+                                            <svg width="13" height="13" viewBox="0 0 20 20" fill="currentColor" style="width: 13px; height: 13px; flex-shrink: 0;"><path fill-rule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16Zm3.857-9.809a.75.75 0 0 0-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 1 0-1.06 1.061l2.5 2.5a.75.75 0 0 0 1.137-.089l4-5.5Z" clip-rule="evenodd" /></svg>
                                         @else
-                                            <x-heroicon-m-camera class="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" style="width: 14px; height: 14px; min-width: 14px; min-height: 14px; display: inline-block;" />
+                                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 13px; height: 13px; flex-shrink: 0;"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
                                         @endif
                                         <span>{{ $photoCount }}/2</span>
                                     </span>
@@ -227,70 +591,44 @@
                 </div>
 
                 {{-- Columna Derecha: Tarjeta de Captura / Muestra Seleccionada --}}
-                <div class="lg:col-span-8 space-y-4">
+                <div>
                     @if($this->selectedSample)
                         @php
                             $current = $this->selectedSample;
-                            $count = $current->qcPhotos->count();
-                            $complete = $count >= 2;
                         @endphp
-                        <div class="bg-white dark:bg-gray-900 rounded-xl p-5 border border-gray-200 dark:border-gray-800 shadow-sm space-y-5">
-                            {{-- Cabecera de la Muestra --}}
-                            <div class="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-gray-100 dark:border-gray-800">
-                                <div>
-                                    <div class="flex items-center gap-2">
-                                        <h2 class="text-xl font-black text-gray-900 dark:text-gray-100">
-                                            Muestra {{ $current->sample_number }}
-                                        </h2>
-                                        <span class="inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-full {{ $complete ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300' : 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300' }}">
-                                            @if($complete)
-                                                <x-heroicon-s-check-circle class="w-4 h-4 text-emerald-600 dark:text-emerald-400" style="width: 16px; height: 16px; display: inline-block;" />
-                                            @else
-                                                <x-heroicon-m-camera class="w-4 h-4 text-amber-600 dark:text-amber-400" style="width: 16px; height: 16px; display: inline-block;" />
-                                            @endif
-                                            <span>{{ $complete ? 'Completa (2/2)' : "Pendiente ({$count}/2)" }}</span>
-                                        </span>
-                                    </div>
-                                    <div class="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-600 dark:text-gray-400 mt-1">
-                                        <span><strong>Barreno:</strong> {{ $current->barreno?->nombre_barreno ?? '—' }}</span>
-                                        <span><strong>Work Order:</strong> {{ $current->workOrder?->work_order_code ?? 'Sin asignar' }}</span>
-                                        <span><strong>Control:</strong> {{ $current->standardSample?->standard_name ?? $current->control_type }}</span>
-                                        @if($current->weight)
-                                            <span><strong>Peso:</strong> {{ $current->weight }} kg</span>
-                                        @endif
-                                    </div>
-                                </div>
-
-                                {{-- Botones Navegación --}}
-                                <div class="flex items-center gap-2">
+                        <div style="display: flex; flex-direction: column; gap: 1rem;">
+                            {{-- Barra Superior de Navegación Rápida --}}
+                            <div style="display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; flex-wrap: wrap;">
+                                <div style="display: flex; align-items: center; gap: 0.5rem;">
                                     <button type="button"
                                             wire:click="goToPrevious"
-                                            class="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 transition">
-                                        <x-heroicon-m-chevron-left class="w-4 h-4" style="width: 16px; height: 16px;" />
+                                            class="qce-btn-nav"
+                                            title="Ir a la muestra anterior">
+                                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 15px; height: 15px; flex-shrink: 0;"><path d="m15 18-6-6 6-6"/></svg>
                                         <span>Anterior</span>
                                     </button>
                                     <button type="button"
                                             wire:click="goToNextPending"
-                                            class="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-lg bg-amber-500 hover:bg-amber-600 text-white shadow-sm transition">
+                                            class="qce-btn-primary"
+                                            title="Ir a la siguiente muestra pendiente">
                                         <span>Siguiente</span>
-                                        <x-heroicon-m-chevron-right class="w-4 h-4" style="width: 16px; height: 16px;" />
+                                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 15px; height: 15px; flex-shrink: 0;"><path d="m9 18 6-6-6-6"/></svg>
+                                    </button>
+                                </div>
+
+                                <div>
+                                    <button type="button"
+                                            wire:click="goToNextPending"
+                                            class="qce-btn-advance">
+                                        <span>Siguiente muestra pendiente</span>
+                                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 15px; height: 15px; flex-shrink: 0;"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
                                     </button>
                                 </div>
                             </div>
 
                             {{-- Componente Uploader Livewire --}}
                             <div>
-                                <livewire:qc-photo-uploader :sample="$current" :wire:key="'qc-evidence-uploader-'.$current->id" />
-                            </div>
-
-                            {{-- Footer rápido de avance móvil --}}
-                            <div class="pt-4 border-t border-gray-100 dark:border-gray-800 flex justify-end">
-                                <button type="button"
-                                        wire:click="goToNextPending"
-                                        class="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-xl bg-gray-900 hover:bg-gray-800 dark:bg-gray-100 dark:hover:bg-white text-white dark:text-gray-900 transition">
-                                    <span>Siguiente muestra pendiente</span>
-                                    <x-heroicon-m-arrow-right class="w-4 h-4" style="width: 16px; height: 16px;" />
-                                </button>
+                                <livewire:qc-photo-uploader :sample-id="$current->id" :wire:key="'qc-evidence-uploader-'.$current->id" />
                             </div>
                         </div>
                     @endif

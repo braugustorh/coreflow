@@ -28,7 +28,11 @@ class QcPhotoUploader extends Component
         }
     }
 
-    public function getSampleProperty(): ?DrillHoleSample
+    /**
+     * Obtiene el modelo fresco de la base de datos con relaciones cargadas
+     * sin depender de cachés de propiedades de Livewire.
+     */
+    public function getFreshSample(): ?DrillHoleSample
     {
         if (!$this->sampleId) {
             return null;
@@ -36,6 +40,11 @@ class QcPhotoUploader extends Component
 
         return DrillHoleSample::with(['qcPhotos.uploader', 'standardSample', 'workOrder', 'barreno'])
             ->find($this->sampleId);
+    }
+
+    public function getSampleProperty(): ?DrillHoleSample
+    {
+        return $this->getFreshSample();
     }
 
     public function updatedScaleUpload(): void
@@ -64,7 +73,7 @@ class QcPhotoUploader extends Component
             "{$propertyName}.max"   => 'El tamaño máximo es de 15MB.',
         ]);
 
-        $sample = $this->sample;
+        $sample = $this->getFreshSample();
         if (!$sample) {
             Notification::make()->title('Muestra no encontrada.')->danger()->send();
             return;
@@ -93,7 +102,7 @@ class QcPhotoUploader extends Component
 
     public function removePhoto(string $typeValue): void
     {
-        $sample = $this->sample;
+        $sample = $this->getFreshSample();
         if (!$sample) {
             return;
         }
@@ -125,7 +134,7 @@ class QcPhotoUploader extends Component
     public function render()
     {
         return view('livewire.qc-photo-uploader', [
-            'sample' => $this->sample,
+            'sample' => $this->getFreshSample(),
         ]);
     }
 }

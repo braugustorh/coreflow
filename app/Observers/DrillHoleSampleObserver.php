@@ -74,6 +74,8 @@ class DrillHoleSampleObserver
                 "No se puede eliminar la muestra {$drillHoleSample->sample_number} porque pertenece a una Work Order ya enviada al laboratorio."
             );
         }
+
+        $drillHoleSample->qcPhotos()->get()->each->delete();
     }
 
     public function updated(DrillHoleSample $drillHoleSample): void
