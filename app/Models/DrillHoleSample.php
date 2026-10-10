@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Attributes\ObservedBy;
 use App\Observers\DrillHoleSampleObserver;
@@ -11,6 +12,7 @@ use App\Observers\DrillHoleSampleObserver;
 #[ObservedBy([DrillHoleSampleObserver::class])]
 class DrillHoleSample extends Model
 {
+    public const QC_PHOTOS_REQUIRED = 2;
     protected $guarded = [];
 
     protected $casts = [
@@ -63,6 +65,31 @@ class DrillHoleSample extends Model
         return $this->belongsTo(DrillHoleSample::class, 'duplicate_sample_id');
     }
 
+    public function qcPhotos(): HasMany
+    {
+        return $this->hasMany(QcSamplePhoto::class);
+    }
+
+    public function requiresQcPhotos(): bool
+    {
+        if (strtoupper(trim((string) $this->sample_type)) !== 'CONTROL') {
+            return false;
+        }
+
+        if ($this->duplicate_sample_id) {
+            return false;
+        }
+
+        return !str_contains(strtoupper((string) $this->control_type), 'DUP');
+    }
+
+    public function hasCompleteQcPhotos(): bool
+    {
+        $count = $this->qc_photos_count ?? $this->qcPhotos()->count();
+
+        return $count >= self::QC_PHOTOS_REQUIRED;
+    }
+
     // ─── Scopes ──────────────────────────────────────────────────────────────
 
     /**
@@ -112,6 +139,27 @@ class DrillHoleSample extends Model
     public function scopeForBarreno(Builder $query, int $barrenoId): Builder
     {
         return $query->where('barreno_id', $barrenoId);
+    }
+
+    /**
+     * Muestras QC que requieren evidencia fotográfica (estándares y blancos, excluyendo duplicados).
+     */
+    public function scopeRequiringQcPhotos(Builder $query): Builder
+    {
+        return $query->whereRaw("UPPER(TRIM(sample_type)) = 'CONTROL'")
+            ->whereNull('duplicate_sample_id')
+            ->where(function ($s) {
+                $s->whereNull('control_type')
+                    ->orWhereRaw("UPPER(control_type) NOT LIKE '%DUP%'");
+            });
+    }
+
+    /**
+     * Muestras QC que tienen fotos pendientes (menos de 2 fotos).
+     */
+    public function scopeMissingQcPhotos(Builder $query): Builder
+    {
+        return $query->requiringQcPhotos()->has('qcPhotos', '<', self::QC_PHOTOS_REQUIRED);
     }
 
     /**

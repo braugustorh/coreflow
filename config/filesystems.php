@@ -60,6 +60,24 @@ return [
             'report' => false,
         ],
 
+        'coreflow' => (function () {
+            $cloudConfig = json_decode(env('LARAVEL_CLOUD_DISK_CONFIG', '[]'), true);
+            $diskData = is_array($cloudConfig) ? collect($cloudConfig)->firstWhere('disk', 'coreflow') : null;
+
+            return [
+                'driver'                  => 's3',
+                'key'                     => $diskData['access_key_id'] ?? env('COREFLOW_ACCESS_KEY_ID', 'b31357dc268f16496ae80224a805178f'),
+                'secret'                  => $diskData['access_key_secret'] ?? env('COREFLOW_SECRET_ACCESS_KEY', 'e31c5a65e4be0fa70c9ac052b53ef737db4ca5011bd8607e604acca8aee07aba'),
+                'region'                  => $diskData['default_region'] ?? env('COREFLOW_DEFAULT_REGION', 'auto'),
+                'bucket'                  => $diskData['bucket'] ?? env('COREFLOW_BUCKET', 'fls-a2e188b3-035f-489a-9e0f-d9a8a61f1a8a'),
+                'endpoint'                => $diskData['endpoint'] ?? env('COREFLOW_ENDPOINT', 'https://367be3a2035528943240074d0096e0cd.r2.cloudflarestorage.com'),
+                'url'                     => $diskData['url'] ?? env('COREFLOW_URL', 'https://fls-a2e188b3-035f-489a-9e0f-d9a8a61f1a8a.laravel.cloud'),
+                'use_path_style_endpoint' => $diskData['use_path_style_endpoint'] ?? false,
+                'throw'                   => false,
+                'report'                  => false,
+            ];
+        })(),
+
     ],
 
     /*

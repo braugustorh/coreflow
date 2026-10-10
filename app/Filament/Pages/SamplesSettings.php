@@ -7,6 +7,7 @@ use App\Models\User;
 use App\Notifications\SampleSettingsUpdatedNotification;
 use BackedEnum;
 use Filament\Forms\Components\TextInput;
+use Filament\Forms\Components\Toggle;
 use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Components\Section;
 use Filament\Forms\Concerns\InteractsWithForms;
@@ -58,6 +59,7 @@ class SamplesSettings extends Page implements HasForms
             'blank_weight'     => $settings->blank_weight,
             'standard_weight'  => $settings->standard_weight,
             'duplicate_ratio'  => $settings->duplicate_ratio,
+            'require_qc_photos' => (bool) ($settings->require_qc_photos ?? true),
         ]);
     }
 
@@ -220,6 +222,16 @@ class SamplesSettings extends Page implements HasForms
                                     ->prefixIcon('heroicon-o-document-duplicate'),
                             ]),
                     ]),
+
+                Section::make('Control de Calidad (Evidencia Fotográfica)')
+                    ->description('Políticas y requisitos de fotografías para muestras de control de calidad.')
+                    ->icon('heroicon-o-camera')
+                    ->schema([
+                        Toggle::make('require_qc_photos')
+                            ->label('Exigir 2 fotografías en muestras de control (báscula y circundantes)')
+                            ->helperText('Si está activo, ninguna Work Order podrá enviarse al laboratorio hasta que todas sus muestras de control (estándares y blancos) cuenten con sus 2 fotografías registradas.')
+                            ->default(true),
+                    ]),
             ])
             ->statePath('data');
     }
@@ -240,6 +252,7 @@ class SamplesSettings extends Page implements HasForms
             'blank_weight'     => $state['blank_weight'],
             'standard_weight'  => $state['standard_weight'],
             'duplicate_ratio'  => $state['duplicate_ratio'],
+            'require_qc_photos' => (bool) ($state['require_qc_photos'] ?? true),
         ]);
 
         // Actualizar también la configuración en runtime de Laravel

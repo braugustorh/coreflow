@@ -30,6 +30,8 @@ use Filament\Support\Enums\Width;
 use App\Filament\Resources\DrillHoleSampleResource\Widgets\DrillHoleSampleStats;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
+use Livewire\Attributes\On;
+use App\Filament\Actions\QcPhotosAction;
 
 class ReviewDrillHoleSamples extends Page implements HasForms, HasTable
 {
@@ -70,6 +72,26 @@ class ReviewDrillHoleSamples extends Page implements HasForms, HasTable
     protected function getHeaderActions(): array
     {
         return [
+            Actions\Action::make('qc_photos_evidence')
+                ->label(function () {
+                    $pending = DrillHoleSample::where('barreno_id', (int)$this->record)
+                        ->where('status', 'draft')
+                        ->requiringQcPhotos()
+                        ->missingQcPhotos()
+                        ->count();
+                    return $pending > 0 ? "Fotos QC ({$pending} pendientes)" : 'Fotos QC';
+                })
+                ->icon('heroicon-o-camera')
+                ->color(function () {
+                    $pending = DrillHoleSample::where('barreno_id', (int)$this->record)
+                        ->where('status', 'draft')
+                        ->requiringQcPhotos()
+                        ->missingQcPhotos()
+                        ->count();
+                    return $pending > 0 ? 'warning' : 'gray';
+                })
+                ->url(fn () => \App\Filament\Pages\QcPhotoEvidence::getUrl(['barrenoId' => (int)$this->record, 'filter' => 'pending'])),
+
             Actions\Action::make('assign_core_size_header')
                 ->label('Asignar Core Size')
                 ->icon('heroicon-o-circle-stack')
@@ -257,7 +279,8 @@ class ReviewDrillHoleSamples extends Page implements HasForms, HasTable
                     ->where('barreno_id', $barrenoId)
                     ->where('status', 'draft')
                     ->where('capture_source', 'import')
-                    ->with(['standardSample', 'duplicateSample', 'barreno', 'workOrder'])
+                    ->with(['standardSample', 'duplicateSample', 'barreno', 'workOrder', 'qcPhotos'])
+                    ->withCount('qcPhotos')
             )
             ->deferLoading()
             ->defaultSort('sample_number', 'asc')
@@ -376,6 +399,30 @@ class ReviewDrillHoleSamples extends Page implements HasForms, HasTable
                         return $record->control_type ?: 'Blank-ML';
                     }),
 
+                Tables\Columns\TextColumn::make('qc_photos_status')
+                    ->label('Fotos QC')
+                    ->badge()
+                    ->state(function (DrillHoleSample $record): string {
+                        if (!$record->requiresQcPhotos()) {
+                            return '—';
+                        }
+                        $count = $record->qc_photos_count ?? $record->qcPhotos()->count();
+                        return "{$count}/" . DrillHoleSample::QC_PHOTOS_REQUIRED;
+                    })
+                    ->color(function (DrillHoleSample $record): string {
+                        if (!$record->requiresQcPhotos()) {
+                            return 'gray';
+                        }
+                        $count = $record->qc_photos_count ?? $record->qcPhotos()->count();
+                        return $count >= DrillHoleSample::QC_PHOTOS_REQUIRED ? 'success' : 'danger';
+                    })
+                    ->tooltip(function (DrillHoleSample $record): ?string {
+                        if (!$record->requiresQcPhotos()) return null;
+                        $count = $record->qc_photos_count ?? $record->qcPhotos()->count();
+                        return $count >= DrillHoleSample::QC_PHOTOS_REQUIRED ? 'Fotos completas (2/2)' : 'Faltan fotos obligatorias de control';
+                    })
+                    ->sortable(false),
+
                 Tables\Columns\TextColumn::make('workOrder.work_order_code')
                     ->label('Work Order')
                     ->badge()
@@ -393,6 +440,7 @@ class ReviewDrillHoleSamples extends Page implements HasForms, HasTable
                     ->limit(25),
             ])
             ->recordActions([
+                QcPhotosAction::make(),
                 EditAction::make()
                     ->slideOver()
                     ->disabled(fn(DrillHoleSample $record): bool => $record->isSent())
@@ -420,12 +468,13 @@ class ReviewDrillHoleSamples extends Page implements HasForms, HasTable
                     ->label('Filtrar registros')
                     ->placeholder('Todos los registros')
                     ->options([
-                        'gaps'       => 'Gaps',
-                        'errors'     => 'Registro con errores',
-                        'originals'  => 'Registros de Originales',
-                        'standards'  => 'Estandards',
-                        'blanks'     => 'Blancos',
-                        'duplicates' => 'Duplicados',
+                        'gaps'              => 'Gaps',
+                        'errors'            => 'Registro con errores',
+                        'originals'         => 'Registros de Originales',
+                        'standards'         => 'Estandards',
+                        'blanks'            => 'Blancos',
+                        'duplicates'        => 'Duplicados',
+                        'qc_missing_photos' => 'QC sin fotos',
                     ])
                     ->query(function (Builder $query, array $data): Builder {
                         $values = (array) ($data['values'] ?? $data['value'] ?? []);
@@ -466,6 +515,7 @@ class ReviewDrillHoleSamples extends Page implements HasForms, HasTable
                                                 ->orWhereRaw("UPPER(TRIM(control_type)) = 'DUPLICATE'")
                                                 ->orWhereRaw("UPPER(TRIM(control_type)) LIKE '%DUP%'");
                                         }),
+                                        'qc_missing_photos' => $q->requiringQcPhotos()->missingQcPhotos(),
                                         default => null,
                                     };
                                 });
@@ -677,5 +727,11 @@ class ReviewDrillHoleSamples extends Page implements HasForms, HasTable
         }
 
         return $matched;
+    }
+
+    #[On('qc-photos-updated')]
+    public function onQcPhotosUpdated(): void
+    {
+        $this->flushCachedTableRecords();
     }
 }

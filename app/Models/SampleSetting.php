@@ -23,6 +23,7 @@ class SampleSetting extends Model
         'blank_weight',
         'standard_weight',
         'duplicate_ratio',
+        'require_qc_photos',
     ];
 
     protected $casts = [
@@ -36,6 +37,7 @@ class SampleSetting extends Model
         'blank_weight'     => 'decimal:2',
         'standard_weight'  => 'decimal:3',
         'duplicate_ratio'  => 'decimal:2',
+        'require_qc_photos' => 'boolean',
     ];
 
     /**
@@ -55,6 +57,7 @@ class SampleSetting extends Model
                 'blank_weight',
                 'standard_weight',
                 'duplicate_ratio',
+                'require_qc_photos',
             ])
             ->logOnlyDirty()
             ->useLogName('sample_settings');
@@ -76,6 +79,7 @@ class SampleSetting extends Model
             'blank_weight'     => 3.00,
             'standard_weight'  => 0.065,
             'duplicate_ratio'  => 50.00,
+            'require_qc_photos' => true,
         ]);
     }
 }

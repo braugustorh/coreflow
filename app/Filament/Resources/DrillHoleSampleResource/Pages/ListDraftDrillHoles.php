@@ -521,11 +521,16 @@ class ListDraftDrillHoles extends Page implements HasForms, HasTable
                     ->requiresConfirmation()
                     ->modalHeading(fn(DrillHole $record) => "Descartar Borrador de {$record->nombre_barreno}")
                     ->modalDescription('¿Estás seguro de descartar las muestras en borrador de este barreno? Esta acción eliminará los registros de este borrador.')
-                    ->action(function(DrillHole $record) {
-                        DrillHoleSample::where('barreno_id', $record->id)
+                    ->action(function(DrillHole $record, \App\Services\QcPhotoService $qcPhotoService) {
+                        $sampleIds = DrillHoleSample::where('barreno_id', $record->id)
                             ->where('status', 'draft')
                             ->where('capture_source', 'import')
-                            ->delete();
+                            ->pluck('id')
+                            ->toArray();
+
+                        $qcPhotoService->purgeForSampleIds($sampleIds);
+
+                        DrillHoleSample::whereIn('id', $sampleIds)->delete();
 
                         Notification::make()
                             ->title("Borrador del barreno {$record->nombre_barreno} descartado.")

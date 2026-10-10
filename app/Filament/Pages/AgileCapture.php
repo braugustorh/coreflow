@@ -31,6 +31,8 @@ use Filament\Tables\Contracts\HasTable;
 use Filament\Tables\Table;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
+use Livewire\Attributes\On;
+use App\Filament\Actions\QcPhotosAction;
 
 class AgileCapture extends Page implements HasForms, HasTable
 {
@@ -383,9 +385,20 @@ class AgileCapture extends Page implements HasForms, HasTable
             $this->flushCachedTableRecords();
             $this->resetPage();
 
+            $qcCountInBatch = collect($samplesData)->filter(function ($d) {
+                $type = $d['sample_type'] ?? 'O';
+                $cType = $d['control_type'] ?? '';
+                return $type === 'Control' && in_array($cType, ['Standard', 'Blank', 'BLANK', 'BLANK-ML', 'BLANK-SN']);
+            })->count();
+
+            $notificationBody = "Se han guardado {$savedCount} muestras correctamente.";
+            if ($qcCountInBatch > 0) {
+                $notificationBody .= " Se incluyeron {$qcCountInBatch} muestra(s) de control (estándar/blanco). Recuerda cargar sus 2 fotografías obligatorias.";
+            }
+
             \Filament\Notifications\Notification::make()
                 ->title('Lote guardado')
-                ->body("Se han guardado {$savedCount} muestras correctamente.")
+                ->body($notificationBody)
                 ->success()
                 ->send();
 
@@ -431,7 +444,8 @@ class AgileCapture extends Page implements HasForms, HasTable
         return $table
             ->query(
                 fn() => DrillHoleSample::query()
-                    ->with('standardSample')
+                    ->with(['standardSample', 'qcPhotos'])
+                    ->withCount('qcPhotos')
                     ->where('barreno_id', $this->selectedBarrenoId ?? -1)
                     ->orderBy('sample_number', 'asc')
             )
@@ -477,6 +491,30 @@ class AgileCapture extends Page implements HasForms, HasTable
                     })
                     ->sortable()
                     ->toggleable(),
+                TextColumn::make('qc_photos_status')
+                    ->label('Fotos QC')
+                    ->badge()
+                    ->state(function (DrillHoleSample $record): string {
+                        if (!$record->requiresQcPhotos()) {
+                            return '—';
+                        }
+                        $count = $record->qc_photos_count ?? $record->qcPhotos()->count();
+                        return "{$count}/" . DrillHoleSample::QC_PHOTOS_REQUIRED;
+                    })
+                    ->color(function (DrillHoleSample $record): string {
+                        if (!$record->requiresQcPhotos()) {
+                            return 'gray';
+                        }
+                        $count = $record->qc_photos_count ?? $record->qcPhotos()->count();
+                        return $count >= DrillHoleSample::QC_PHOTOS_REQUIRED ? 'success' : 'danger';
+                    })
+                    ->tooltip(function (DrillHoleSample $record): ?string {
+                        if (!$record->requiresQcPhotos()) return null;
+                        $count = $record->qc_photos_count ?? $record->qcPhotos()->count();
+                        return $count >= DrillHoleSample::QC_PHOTOS_REQUIRED ? 'Fotos completas (2/2)' : 'Faltan fotos obligatorias de control';
+                    })
+                    ->sortable(false)
+                    ->toggleable(),
                 TextColumn::make('core_size')
                     ->label('Core Size')
                     ->badge()
@@ -511,6 +549,7 @@ class AgileCapture extends Page implements HasForms, HasTable
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->actions([
+                QcPhotosAction::make(),
                 EditAction::make()
                     ->label('Editar')
                     ->icon('heroicon-o-pencil-square')
@@ -568,6 +607,15 @@ class AgileCapture extends Page implements HasForms, HasTable
                     ->modalSubmitActionLabel('Sí, eliminar'),
             ])
             ->headerActions([
+                TableAction::make('qcPhotosEvidence')
+                    ->label(function () {
+                        $pending = $this->pendingQcPhotosCount;
+                        return $pending > 0 ? "Fotos QC ({$pending} pendientes)" : 'Fotos QC';
+                    })
+                    ->icon('heroicon-o-camera')
+                    ->color(fn () => $this->pendingQcPhotosCount > 0 ? 'warning' : 'gray')
+                    ->url(fn () => \App\Filament\Pages\QcPhotoEvidence::getUrl(['barrenoId' => $this->selectedBarrenoId, 'filter' => 'pending']))
+                    ->visible(fn () => (bool) $this->selectedBarrenoId),
                 TableAction::make('assignCoreSizeHeader')
                     ->label('Asignar Core Size')
                     ->icon('heroicon-o-circle-stack')
@@ -984,5 +1032,23 @@ class AgileCapture extends Page implements HasForms, HasTable
         }
 
         return $matched;
+    }
+
+    public function getPendingQcPhotosCountProperty(): int
+    {
+        if (!$this->selectedBarrenoId) {
+            return 0;
+        }
+
+        return DrillHoleSample::where('barreno_id', $this->selectedBarrenoId)
+            ->requiringQcPhotos()
+            ->missingQcPhotos()
+            ->count();
+    }
+
+    #[On('qc-photos-updated')]
+    public function onQcPhotosUpdated(): void
+    {
+        $this->flushCachedTableRecords();
     }
 }

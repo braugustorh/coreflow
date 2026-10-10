@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\SamplingMonitor\Tables;
 
 use App\Models\DrillHoleSample;
+use App\Models\SampleSetting;
 use App\Models\User;
 use App\Models\WorkOrder;
 use App\Notifications\WorkOrderDispatchedNotification;
@@ -39,6 +40,14 @@ class SamplingMonitorTable
                     ->withSum('drillHoleSamples', 'weight')
                     ->withMin('drillHoleSamples', 'sample_number')
                     ->withMax('drillHoleSamples', 'sample_number')
+                    ->withCount([
+                        'drillHoleSamples as qc_required_count' => function ($q) {
+                            $q->requiringQcPhotos();
+                        },
+                        'drillHoleSamples as qc_completed_count' => function ($q) {
+                            $q->requiringQcPhotos()->has('qcPhotos', '>=', DrillHoleSample::QC_PHOTOS_REQUIRED);
+                        },
+                    ])
                     ->whereHas('drillHoleSamples')
             )
             ->defaultSort('created_at', 'desc')
@@ -165,6 +174,47 @@ class SamplingMonitorTable
                         'BQ' => 'danger',
                         default => 'gray',
                     }),
+
+                TextColumn::make('qc_photos_summary')
+                    ->label('Fotos QC')
+                    ->getStateUsing(function (WorkOrder $record): string {
+                        $req = $record->qc_required_count ?? $record->drillHoleSamples()->requiringQcPhotos()->count();
+                        if ($req === 0) {
+                            return 'Sin QC';
+                        }
+                        $comp = $record->qc_completed_count ?? $record->drillHoleSamples()->requiringQcPhotos()->has('qcPhotos', '>=', DrillHoleSample::QC_PHOTOS_REQUIRED)->count();
+                        return "{$comp}/{$req}";
+                    })
+                    ->badge()
+                    ->color(function (WorkOrder $record): string {
+                        $req = $record->qc_required_count ?? $record->drillHoleSamples()->requiringQcPhotos()->count();
+                        if ($req === 0) {
+                            return 'gray';
+                        }
+                        $comp = $record->qc_completed_count ?? $record->drillHoleSamples()->requiringQcPhotos()->has('qcPhotos', '>=', DrillHoleSample::QC_PHOTOS_REQUIRED)->count();
+                        return $comp >= $req ? 'success' : 'danger';
+                    })
+                    ->icon(function (WorkOrder $record): ?string {
+                        $req = $record->qc_required_count ?? $record->drillHoleSamples()->requiringQcPhotos()->count();
+                        if ($req === 0) return null;
+                        $comp = $record->qc_completed_count ?? $record->drillHoleSamples()->requiringQcPhotos()->has('qcPhotos', '>=', DrillHoleSample::QC_PHOTOS_REQUIRED)->count();
+                        return $comp >= $req ? 'heroicon-m-check-circle' : 'heroicon-m-camera';
+                    })
+                    ->tooltip(function (WorkOrder $record): string {
+                        $req = $record->qc_required_count ?? $record->drillHoleSamples()->requiringQcPhotos()->count();
+                        if ($req === 0) {
+                            return 'Esta orden no contiene muestras de control (estándares o blancos)';
+                        }
+                        $comp = $record->qc_completed_count ?? $record->drillHoleSamples()->requiringQcPhotos()->has('qcPhotos', '>=', DrillHoleSample::QC_PHOTOS_REQUIRED)->count();
+                        return $comp >= $req ? 'Todas las muestras QC tienen sus 2 fotos obligatorias' : 'Faltan fotos QC por documentar en esta orden. Clic para ir al módulo.';
+                    })
+                    ->url(function (WorkOrder $record): ?string {
+                        $req = $record->qc_required_count ?? $record->drillHoleSamples()->requiringQcPhotos()->count();
+                        if ($req === 0) return null;
+                        return \App\Filament\Pages\QcPhotoEvidence::getUrl(['workOrderId' => $record->id, 'filter' => 'pending']);
+                    })
+                    ->openUrlInNewTab(false)
+                    ->sortable(false),
 
                 // ── Campos logísticos editables inline ───────────────────────
                 // Nota: estos campos viven en drill_hole_samples pero se editan
@@ -352,6 +402,35 @@ class SamplingMonitorTable
                         )
                         : $query
                     ),
+
+                SelectFilter::make('qc_photos_status')
+                    ->label('Estado Fotos QC')
+                    ->options([
+                        'completed' => 'Fotos QC Completas (✓)',
+                        'pending'   => 'Fotos QC Incompletas / Pendientes (⚠)',
+                        'no_qc'     => 'Sin Muestras QC',
+                    ])
+                    ->query(function (Builder $query, array $data): Builder {
+                        $val = $data['value'] ?? null;
+                        if (!$val) return $query;
+
+                        if ($val === 'pending') {
+                            return $query->whereHas('drillHoleSamples', function ($q) {
+                                $q->requiringQcPhotos()->missingQcPhotos();
+                            });
+                        } elseif ($val === 'completed') {
+                            return $query->whereHas('drillHoleSamples', function ($q) {
+                                $q->requiringQcPhotos();
+                            })->whereDoesntHave('drillHoleSamples', function ($q) {
+                                $q->requiringQcPhotos()->missingQcPhotos();
+                            });
+                        } elseif ($val === 'no_qc') {
+                            return $query->whereDoesntHave('drillHoleSamples', function ($q) {
+                                $q->requiringQcPhotos();
+                            });
+                        }
+                        return $query;
+                    }),
             ])
 
             // ── Acciones por fila ─────────────────────────────────────────────
@@ -525,10 +604,18 @@ class SamplingMonitorTable
                         $missing = self::getMissingSendRequirements($record);
                         if (!empty($missing)) {
                             $listHtml = '<ul>' . implode('', array_map(fn ($m) => "<li>• {$m}</li>", $missing)) . '</ul>';
+
+                            $qcPendingCount = $record->drillHoleSamples()->requiringQcPhotos()->missingQcPhotos()->count();
+                            $qcLinkHtml = '';
+                            if ($qcPendingCount > 0) {
+                                $url = \App\Filament\Pages\QcPhotoEvidence::getUrl(['workOrderId' => $record->id, 'filter' => 'pending']);
+                                $qcLinkHtml = '<div style="margin-top: 12px;"><a href="' . $url . '" style="display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; background-color: #dc2626; color: white; border-radius: 6px; text-decoration: none; font-size: 12px; font-weight: bold; box-shadow: 0 1px 2px rgba(0,0,0,0.1);">📷 Ir a capturar fotos QC de esta orden (' . $qcPendingCount . ' pendientes)</a></div>';
+                            }
+
                             return [
                                 Placeholder::make('missing_warning')
-                                    ->label('Campos Pendientes Requeridos')
-                                    ->content(new HtmlString('<div style="padding: 14px 16px; background-color: #fef2f2; color: #991b1b; border: 1px solid #fecaca; border-radius: 8px; font-size: 13px; line-height: 1.5;"><strong>Atención:</strong> Para poder enviar esta orden al laboratorio, primero debes capturar los siguientes campos en la fila correspondiente:<div style="margin-top: 8px; font-weight: 600;">' . $listHtml . '</div><p style="margin-top: 8px; font-size: 12px; color: #b91c1c;">Por favor cierra este diálogo, selecciona los valores faltantes en la tabla y vuelve a intentar el envío.</p></div>')),
+                                    ->label('Requisitos Pendientes para Envío')
+                                    ->content(new HtmlString('<div style="padding: 14px 16px; background-color: #fef2f2; color: #991b1b; border: 1px solid #fecaca; border-radius: 8px; font-size: 13px; line-height: 1.5;"><strong>Atención:</strong> Para poder enviar esta orden al laboratorio, primero debes solventar los siguientes requerimientos:<div style="margin-top: 8px; font-weight: 600;">' . $listHtml . '</div>' . $qcLinkHtml . '<p style="margin-top: 10px; font-size: 12px; color: #b91c1c;">Por favor solventa los requerimientos indicados antes de intentar liberar el envío.</p></div>')),
                             ];
                         }
 
@@ -734,6 +821,28 @@ class SamplingMonitorTable
                 }
 
                 $prevTo = max($prevTo ?? 0, $to);
+            }
+        }
+
+        // 4. Validar Fotografías obligatorias de muestras de control (QC)
+        $requireQcPhotos = (bool) (SampleSetting::getSettings()->require_qc_photos ?? true);
+        if ($requireQcPhotos) {
+            $missingQcSamples = $record->drillHoleSamples()
+                ->requiringQcPhotos()
+                ->missingQcPhotos()
+                ->with(['standardSample', 'qcPhotos'])
+                ->withCount('qcPhotos')
+                ->get();
+
+            if ($missingQcSamples->isNotEmpty()) {
+                $missingDetails = $missingQcSamples->map(function ($s) {
+                    $c = $s->qc_photos_count ?? $s->qcPhotos()->count();
+                    $label = $s->standardSample?->standard_name ?? $s->control_type;
+                    return "{$s->sample_number} ({$label}: {$c}/2 fotos)";
+                })->implode(', ');
+
+                $count = $missingQcSamples->count();
+                $missing[] = "Fotografías QC obligatorias pendientes en {$count} muestra(s): {$missingDetails}. Se requieren 2 fotos por muestra (Báscula y Muestras circundantes).";
             }
         }
 
