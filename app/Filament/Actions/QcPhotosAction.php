@@ -4,6 +4,7 @@ namespace App\Filament\Actions;
 
 use App\Models\DrillHoleSample;
 use Filament\Actions\Action;
+use Filament\Support\Enums\Width;
 
 class QcPhotosAction
 {
@@ -22,6 +23,7 @@ class QcPhotosAction
                 return $record->requiresQcPhotos();
             })
             ->slideOver()
+            ->modalWidth(Width::FourExtraLarge)
             ->modalHeading(fn (DrillHoleSample $record) => "Evidencia Fotográfica QC · Muestra {$record->sample_number}")
             ->modalContent(fn (DrillHoleSample $record) => view('filament.components.qc-photo-modal', ['record' => $record]))
             ->modalSubmitAction(false)

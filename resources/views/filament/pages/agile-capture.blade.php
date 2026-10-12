@@ -66,14 +66,15 @@
 
         .ac-search-row .ac-input-wrap {
             flex: 1;
+            position: relative;
         }
 
         .ac-search-row .ac-input-wrap input {
             width: 100%;
-            padding: 0.625rem 1rem;
+            padding: 0.625rem 2.75rem 0.625rem 1rem;
             border-radius: 0.625rem;
             border: 1px solid rgba(99, 102, 241, 0.25);
-            background: rgba(255, 255, 255, 0.85);
+            background: rgba(255, 255, 255, 0.95);
             font-size: 0.9rem;
             color: #1e293b;
             outline: none;
@@ -82,19 +83,304 @@
 
         .ac-search-row .ac-input-wrap input:focus {
             border-color: #6366f1;
-            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.18);
         }
 
         .ac-search-row .ac-input-wrap input::placeholder {
             color: #94a3b8;
         }
 
-        /* --- Barreno Active Badge --- */
+        /* --- Input Controls (Spinner & Clear) --- */
+        .ac-input-controls {
+            position: absolute;
+            right: 0.75rem;
+            top: 50%;
+            transform: translateY(-50%);
+            display: flex;
+            align-items: center;
+            gap: 0.35rem;
+            z-index: 10;
+        }
+
+        .ac-input-spinner {
+            width: 1.25rem;
+            height: 1.25rem;
+            color: #6366f1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .ac-input-spinner svg {
+            width: 1.1rem;
+            height: 1.1rem;
+            animation: ac-spin 0.75s linear infinite;
+        }
+
+        @keyframes ac-spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+
+        .ac-input-clear-btn {
+            background: none;
+            border: none;
+            padding: 0.25rem;
+            color: #94a3b8;
+            cursor: pointer;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: color 0.15s, background 0.15s;
+        }
+
+        .ac-input-clear-btn:hover {
+            color: #ef4444;
+            background: rgba(239, 68, 68, 0.1);
+        }
+
+        .ac-input-clear-btn svg {
+            width: 1rem;
+            height: 1rem;
+        }
+
+        /* --- Suggestions Autocomplete Dropdown --- */
+        .ac-suggestions-dropdown {
+            position: absolute;
+            top: calc(100% + 6px);
+            left: 0;
+            right: 0;
+            background: #ffffff;
+            border: 1px solid rgba(99, 102, 241, 0.25);
+            border-radius: 0.875rem;
+            box-shadow: 0 20px 35px -5px rgba(15, 23, 42, 0.15), 0 10px 15px -5px rgba(15, 23, 42, 0.06);
+            z-index: 60;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .ac-suggestions-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0.625rem 1rem;
+            background: rgba(99, 102, 241, 0.05);
+            border-bottom: 1px solid rgba(99, 102, 241, 0.12);
+            font-size: 0.75rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            color: #6366f1;
+        }
+
+        .ac-suggestions-list {
+            max-height: 280px;
+            overflow-y: auto;
+            padding: 0.375rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.25rem;
+        }
+
+        .ac-suggestion-item {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.625rem 0.875rem;
+            border-radius: 0.625rem;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            text-decoration: none;
+        }
+
+        .ac-suggestion-item:hover {
+            background: rgba(99, 102, 241, 0.08);
+            transform: translateX(2px);
+        }
+
+        .ac-sugg-icon {
+            width: 2.125rem;
+            height: 2.125rem;
+            border-radius: 0.5rem;
+            background: rgba(99, 102, 241, 0.12);
+            color: #6366f1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+
+        .ac-sugg-icon svg {
+            width: 1.15rem;
+            height: 1.15rem;
+        }
+
+        .ac-sugg-content {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .ac-sugg-name {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.925rem;
+            font-weight: 700;
+            color: #1e293b;
+        }
+
+        .ac-sugg-meta {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            font-size: 0.75rem;
+            color: #64748b;
+            margin-top: 0.125rem;
+            flex-wrap: wrap;
+        }
+
+        .ac-sugg-action {
+            display: flex;
+            align-items: center;
+            gap: 0.25rem;
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: #6366f1;
+            opacity: 0;
+            transform: translateX(-4px);
+            transition: all 0.15s ease;
+        }
+
+        .ac-suggestion-item:hover .ac-sugg-action {
+            opacity: 1;
+            transform: translateX(0);
+        }
+
+        .ac-suggestions-footer {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0.625rem 1rem;
+            background: rgba(248, 250, 252, 0.9);
+            border-top: 1px solid rgba(226, 232, 240, 0.8);
+            font-size: 0.8rem;
+            color: #64748b;
+        }
+
+        .ac-create-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            font-weight: 600;
+            color: #6366f1;
+            text-decoration: none;
+            transition: color 0.15s;
+        }
+
+        .ac-create-link:hover {
+            color: #4f46e5;
+            text-decoration: underline;
+        }
+
+        /* --- Empty state suggestion --- */
+        .ac-empty-suggestions {
+            padding: 1.5rem 1.25rem;
+            text-align: center;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0.4rem;
+        }
+
+        .ac-empty-icon {
+            width: 2.75rem;
+            height: 2.75rem;
+            border-radius: 50%;
+            background: rgba(99, 102, 241, 0.1);
+            color: #6366f1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 0.25rem;
+        }
+
+        .ac-empty-icon svg {
+            width: 1.5rem;
+            height: 1.5rem;
+        }
+
+        .ac-empty-title {
+            font-size: 0.925rem;
+            font-weight: 600;
+            color: #1e293b;
+        }
+
+        .ac-empty-desc {
+            font-size: 0.8rem;
+            color: #64748b;
+            max-width: 320px;
+        }
+
+        .ac-btn-create-suggestion {
+            margin-top: 0.75rem;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.625rem 1.25rem;
+            background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+            color: white !important;
+            font-size: 0.85rem;
+            font-weight: 600;
+            border-radius: 0.625rem;
+            text-decoration: none !important;
+            box-shadow: 0 4px 14px rgba(99, 102, 241, 0.3);
+            transition: transform 0.15s, box-shadow 0.15s;
+        }
+
+        .ac-btn-create-suggestion:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 6px 18px rgba(99, 102, 241, 0.4);
+        }
+
+        .ac-badge-tag {
+            font-size: 0.65rem;
+            font-weight: 600;
+            padding: 0.125rem 0.375rem;
+            border-radius: 0.375rem;
+            text-transform: uppercase;
+        }
+
+        .ac-badge-tag.warning {
+            background: rgba(245, 158, 11, 0.15);
+            color: #d97706;
+        }
+
+        .ac-badge-tag.success {
+            background: rgba(34, 197, 94, 0.15);
+            color: #16a34a;
+        }
+
+        .ac-badge-tag.gray {
+            background: rgba(148, 163, 184, 0.2);
+            color: #64748b;
+        }
+
+        /* --- Barreno Active Badge & Row --- */
+        .ac-barreno-active-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+            margin-top: 0.875rem;
+            flex-wrap: wrap;
+        }
+
         .ac-barreno-active {
             display: inline-flex;
             align-items: center;
             gap: 0.5rem;
-            margin-top: 0.875rem;
             padding: 0.5rem 0.875rem;
             background: linear-gradient(135deg, rgba(34, 197, 94, 0.1), rgba(16, 185, 129, 0.08));
             border: 1px solid rgba(34, 197, 94, 0.25);
@@ -102,6 +388,32 @@
             font-size: 0.8rem;
             font-weight: 600;
             color: #16a34a;
+        }
+
+        .ac-btn-clear-barreno {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.375rem;
+            padding: 0.375rem 0.75rem;
+            background: rgba(148, 163, 184, 0.1);
+            border: 1px solid rgba(148, 163, 184, 0.25);
+            border-radius: 2rem;
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: #64748b;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .ac-btn-clear-barreno:hover {
+            background: rgba(239, 68, 68, 0.1);
+            border-color: rgba(239, 68, 68, 0.3);
+            color: #ef4444;
+        }
+
+        .ac-btn-clear-barreno svg {
+            width: 0.875rem;
+            height: 0.875rem;
         }
 
         .ac-barreno-active .ac-dot {
@@ -241,9 +553,7 @@
 
         /* --- Capture Form Section --- */
         .ac-form-section {
-            background: rgba(255, 255, 255, 0.6);
-            backdrop-filter: blur(12px);
-            -webkit-backdrop-filter: blur(12px);
+            background: rgba(255, 255, 255, 0.95);
             border: 1px solid rgba(226, 232, 240, 0.8);
             border-radius: 1rem;
             padding: 1.5rem;
@@ -294,15 +604,6 @@
             border-top: 1px solid rgba(226, 232, 240, 0.6);
         }
 
-        .ac-table-section {
-            background: rgba(255, 255, 255, 0.6);
-            backdrop-filter: blur(12px);
-            -webkit-backdrop-filter: blur(12px);
-            border: 1px solid rgba(226, 232, 240, 0.8);
-            border-radius: 1rem;
-            padding: 1.5rem;
-        }
-
         .ac-table-header {
             display: flex;
             align-items: center;
@@ -338,6 +639,19 @@
             animation: ac-fadeSlideUp 0.4s ease-out both;
         }
 
+        /* Global Modal Stacking Defense */
+        .fi-modal-close-overlay {
+            z-index: 50 !important;
+        }
+
+        .fi-modal-window-ctn {
+            z-index: 50 !important;
+        }
+
+        .fi-modal {
+            z-index: 50 !important;
+        }
+
         .ac-animate-in:nth-child(2) {
             animation-delay: 0.05s;
         }
@@ -350,6 +664,11 @@
             animation-delay: 0.15s;
         }
 
+        @keyframes ac-fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
         @keyframes ac-fadeSlideUp {
             from {
                 opacity: 0;
@@ -358,7 +677,7 @@
 
             to {
                 opacity: 1;
-                transform: translateY(0);
+                transform: none;
             }
         }
 
@@ -380,7 +699,7 @@
 
         .dark .ac-form-section,
         .dark .ac-table-section {
-            background: rgba(30, 41, 59, 0.5);
+            background: rgba(30, 41, 59, 0.95);
             border-color: rgba(51, 65, 85, 0.6);
         }
 
@@ -476,14 +795,79 @@
             background: #0f172a;
             color: #475569;
         }
+
+        .dark .ac-suggestions-dropdown {
+            background: #1e293b;
+            border-color: rgba(99, 102, 241, 0.35);
+            box-shadow: 0 20px 35px -5px rgba(0, 0, 0, 0.5), 0 10px 15px -5px rgba(0, 0, 0, 0.2);
+        }
+
+        .dark .ac-suggestions-header {
+            background: rgba(99, 102, 241, 0.1);
+            border-bottom-color: rgba(99, 102, 241, 0.2);
+            color: #a5b4fc;
+        }
+
+        .dark .ac-sugg-name {
+            color: #f8fafc;
+        }
+
+        .dark .ac-sugg-meta {
+            color: #94a3b8;
+        }
+
+        .dark .ac-suggestion-item:hover {
+            background: rgba(99, 102, 241, 0.15);
+        }
+
+        .dark .ac-sugg-icon {
+            background: rgba(99, 102, 241, 0.2);
+            color: #a5b4fc;
+        }
+
+        .dark .ac-suggestions-footer {
+            background: rgba(15, 23, 42, 0.6);
+            border-top-color: rgba(51, 65, 85, 0.6);
+            color: #94a3b8;
+        }
+
+        .dark .ac-empty-title {
+            color: #f1f5f9;
+        }
+
+        .dark .ac-empty-desc {
+            color: #94a3b8;
+        }
+
+        .dark .ac-btn-clear-barreno {
+            background: rgba(51, 65, 85, 0.4);
+            border-color: rgba(71, 85, 105, 0.6);
+            color: #cbd5e1;
+        }
+
+        .dark .ac-btn-clear-barreno:hover {
+            background: rgba(239, 68, 68, 0.2);
+            border-color: rgba(239, 68, 68, 0.4);
+            color: #f87171;
+        }
     </style>
 @endpush
 
 <x-filament-panels::page>
     <div class="ac-page">
 
-        {{-- PASO 1: Búsqueda de Barreno --}}
-        <div class="ac-search-section ac-animate-in">
+        {{-- PASO 1: Búsqueda de Barreno con Autocompletado Reactivo --}}
+        <div class="ac-search-section ac-animate-in"
+             x-data="{ 
+                 isOpen: false,
+                 handleKeydown(e) {
+                     if (e.key === 'Escape') {
+                         this.isOpen = false;
+                     }
+                 }
+             }"
+             @click.outside="isOpen = false"
+             @keydown.window="handleKeydown($event)">
             <div class="ac-search-header">
                 <div class="ac-search-icon">
                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2"
@@ -494,24 +878,168 @@
                 </div>
                 <div>
                     <div class="ac-search-title">Selección de Barreno</div>
-                    <div class="ac-search-subtitle">Busque o cree un barreno para comenzar la captura</div>
+                    <div class="ac-search-subtitle">Escribe para autocompletar, seleccionar o registrar un barreno</div>
                 </div>
             </div>
+
             <div class="ac-search-row">
                 <div class="ac-input-wrap">
-                    <input type="text" wire:model="searchBarreno" wire:keydown.enter="selectBarreno"
-                        placeholder="Ingrese nombre del barreno… (Ej: BH-001)" />
+                    <input type="text"
+                        wire:model.live.debounce.250ms="searchBarreno"
+                        wire:keydown.enter="selectBarreno"
+                        @focus="isOpen = true"
+                        @input="isOpen = true"
+                        autocomplete="off"
+                        spellcheck="false"
+                        placeholder="Escribe el nombre del barreno… (Ej: TDS25-007, DDH-001)" />
+
+                    {{-- Controles integrados en el input: Spinner y Limpiar --}}
+                    <div class="ac-input-controls">
+                        <div wire:loading wire:target="searchBarreno" class="ac-input-spinner">
+                            <svg fill="none" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
+                            </svg>
+                        </div>
+                        @if(!empty(trim($searchBarreno)))
+                            <button type="button"
+                                wire:loading.remove
+                                wire:target="searchBarreno"
+                                wire:click="clearBarreno"
+                                @click="isOpen = false"
+                                class="ac-input-clear-btn"
+                                title="Limpiar búsqueda">
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                            </button>
+                        @endif
+                    </div>
+
+                    {{-- DROPDOWN DE SUGERENCIAS / COINCIDENCIAS --}}
+                    @if(!empty(trim($searchBarreno)))
+                        <div x-show="isOpen"
+                             x-transition:enter="transition ease-out duration-150"
+                             x-transition:enter-start="opacity-0 transform -translate-y-2 scale-98"
+                             x-transition:enter-end="opacity-100 transform translate-y-0 scale-100"
+                             x-transition:leave="transition ease-in duration-100"
+                             x-transition:leave-start="opacity-100 transform translate-y-0 scale-100"
+                             x-transition:leave-end="opacity-0 transform -translate-y-2 scale-98"
+                             class="ac-suggestions-dropdown"
+                             style="display: none;">
+
+                            @if($this->barrenoSuggestions->isNotEmpty())
+                                <div class="ac-suggestions-header">
+                                    <span>Coincidencias encontradas ({{ $this->barrenoSuggestions->count() }})</span>
+                                    <span style="font-weight: 500; text-transform: none; color: #94a3b8;">Clic para seleccionar</span>
+                                </div>
+                                <div class="ac-suggestions-list">
+                                    @foreach($this->barrenoSuggestions as $suggestion)
+                                        <div wire:click="selectBarrenoById({{ $suggestion->id }})"
+                                             @click="isOpen = false"
+                                             class="ac-suggestion-item">
+                                            <div class="ac-sugg-icon">
+                                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.75" stroke="currentColor">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" d="M21 7.5l-9-5.25L3 7.5m18 0l-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9" />
+                                                </svg>
+                                            </div>
+                                            <div class="ac-sugg-content">
+                                                <div class="ac-sugg-name">
+                                                    <span>{{ $suggestion->nombre_barreno }}</span>
+                                                    @if($suggestion->is_child)
+                                                        <span class="ac-badge-tag warning">Wedge / Hijo</span>
+                                                    @elseif($suggestion->hasChildren())
+                                                        <span class="ac-badge-tag success">Madre</span>
+                                                    @endif
+                                                    @if($suggestion->is_historical)
+                                                        <span class="ac-badge-tag gray">Histórico</span>
+                                                    @endif
+                                                </div>
+                                                <div class="ac-sugg-meta">
+                                                    @if($suggestion->sede)
+                                                        <span>📍 {{ $suggestion->sede->name }}</span>
+                                                    @endif
+                                                    @if($suggestion->proyecto)
+                                                        <span>📁 {{ $suggestion->proyecto->nombre }}</span>
+                                                    @endif
+                                                    @if($suggestion->drill_hole_samples_count > 0)
+                                                        <span>🧪 {{ $suggestion->drill_hole_samples_count }} muestra(s)</span>
+                                                    @else
+                                                        <span style="opacity: 0.7;">🧪 Sin muestras</span>
+                                                    @endif
+                                                </div>
+                                            </div>
+                                            <div class="ac-sugg-action">
+                                                <span>Seleccionar</span>
+                                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style="width: 14px; height: 14px;">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+                                                </svg>
+                                            </div>
+                                        </div>
+                                    @endforeach
+                                </div>
+                                <div class="ac-suggestions-footer">
+                                    <span>¿Buscas otro barreno?</span>
+                                    <a href="{{ \App\Filament\Resources\DrillHoles\DrillHoleResource::getUrl('create', ['nombre_barreno' => trim($searchBarreno)]) }}"
+                                       class="ac-create-link">
+                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style="width: 14px; height: 14px;">
+                                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                                        </svg>
+                                        Crear nuevo barreno
+                                    </a>
+                                </div>
+                            @else
+                                {{-- Sin resultados --}}
+                                <div class="ac-empty-suggestions">
+                                    <div class="ac-empty-icon">
+                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                                            <path stroke-linecap="round" stroke-linejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607ZM10.5 7.5v6m3-3h-6" />
+                                        </svg>
+                                    </div>
+                                    <div class="ac-empty-title">
+                                        Sin coincidencias para "<strong>{{ $searchBarreno }}</strong>"
+                                    </div>
+                                    <div class="ac-empty-desc">
+                                        No existe ningún barreno registrado con este nombre en el sistema.
+                                    </div>
+                                    <a href="{{ \App\Filament\Resources\DrillHoles\DrillHoleResource::getUrl('create', ['nombre_barreno' => trim($searchBarreno)]) }}"
+                                       class="ac-btn-create-suggestion">
+                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style="width: 16px; height: 16px;">
+                                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                                        </svg>
+                                        <span>Crear barreno "<strong>{{ $searchBarreno }}</strong>"</span>
+                                    </a>
+                                </div>
+                            @endif
+                        </div>
+                    @endif
                 </div>
+
                 <x-filament::button wire:click="selectBarreno" wire:loading.attr="disabled"
                     icon="heroicon-m-magnifying-glass" color="primary">
                     <span wire:loading.remove wire:target="selectBarreno">Buscar</span>
                     <span wire:loading wire:target="selectBarreno">Buscando…</span>
                 </x-filament::button>
             </div>
+
             @if($selectedBarrenoId && $barreno)
-                <div class="ac-barreno-active">
-                    <span class="ac-dot"></span>
-                    Barreno activo: <strong style="margin-left:2px">{{ $barreno->nombre_barreno }}</strong>
+                <div class="ac-barreno-active-row">
+                    <div class="ac-barreno-active">
+                        <span class="ac-dot"></span>
+                        Barreno activo: <strong style="margin-left:2px">{{ $barreno->nombre_barreno }}</strong>
+                        @if($barreno->sede)
+                            <span style="opacity: 0.75; font-weight: normal; margin-left: 4px;">• {{ $barreno->sede->name }}</span>
+                        @endif
+                        @if($barreno->proyecto)
+                            <span style="opacity: 0.75; font-weight: normal; margin-left: 2px;">({{ $barreno->proyecto->nombre }})</span>
+                        @endif
+                    </div>
+                    <button type="button" wire:click="clearBarreno" class="ac-btn-clear-barreno" title="Cambiar a otro barreno">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
+                        </svg>
+                        Cambiar Barreno
+                    </button>
                 </div>
             @endif
         </div>
@@ -719,84 +1247,186 @@
                 </div>
 
                 {{-- Modal Asignar Core Size --}}
-                <div x-show="showCoreSizeModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" style="display: none;" x-cloak>
-                    <div class="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full p-6 space-y-4 border border-gray-200 dark:border-gray-700">
-                        <h3 class="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                            <svg class="w-5 h-5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.25 6.375c0 2.278-3.694 4.125-8.25 4.125S3.75 8.653 3.75 6.375m16.5 0c0-2.278-3.694-4.125-8.25-4.125S3.75 4.097 3.75 6.375m16.5 0v11.25c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125m16.5 5.625c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125"/></svg>
-                            Asignar Core Size
-                        </h3>
+                <template x-teleport="body">
+                    <div x-show="showCoreSizeModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" style="display: none;" x-cloak>
+                        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full p-6 space-y-4 border border-gray-200 dark:border-gray-700">
+                            <h3 class="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                                <svg class="w-5 h-5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.25 6.375c0 2.278-3.694 4.125-8.25 4.125S3.75 8.653 3.75 6.375m16.5 0c0-2.278-3.694-4.125-8.25-4.125S3.75 4.097 3.75 6.375m16.5 0v11.25c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125m16.5 5.625c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125"/></svg>
+                                Asignar Core Size
+                            </h3>
 
-                        <div class="space-y-3">
-                            <div>
-                                <label class="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">Aplicar a:</label>
-                                <select x-model="coreSizeScope" class="ac-grid-input w-full">
-                                    <option value="all">Todas las muestras del lote</option>
-                                    <option value="range">Rango de muestras (Inicio a Fin)</option>
-                                    <option value="single">Muestra única</option>
-                                </select>
+                            <div class="space-y-3">
+                                <div>
+                                    <label class="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">Aplicar a:</label>
+                                    <select x-model="coreSizeScope" class="ac-grid-input w-full">
+                                        <option value="all">Todas las muestras del lote</option>
+                                        <option value="range">Rango de muestras (Inicio a Fin)</option>
+                                        <option value="single">Muestra única</option>
+                                    </select>
+                                </div>
+
+                                <template x-if="coreSizeScope === 'range' || coreSizeScope === 'single'">
+                                    <div>
+                                        <label class="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">Muestra Inicio (X):</label>
+                                        <input type="text" x-model="coreSizeStart" class="ac-grid-input w-full" placeholder="Ej: ML157100">
+                                    </div>
+                                </template>
+
+                                <template x-if="coreSizeScope === 'range'">
+                                    <div>
+                                        <label class="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">Muestra Fin (Y):</label>
+                                        <input type="text" x-model="coreSizeEnd" class="ac-grid-input w-full" placeholder="Ej: ML157110">
+                                    </div>
+                                </template>
+
+                                <div>
+                                    <label class="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">Tamaño de Núcleo (Core Size):</label>
+                                    <select x-model="selectedCoreSize" class="ac-grid-input w-full">
+                                        <option value="">Seleccione Core Size...</option>
+                                        <option value="BQ">BQ (36.5 mm)</option>
+                                        <option value="NQ">NQ (47.6 mm)</option>
+                                        <option value="NQ2">NQ2 (50.5 mm)</option>
+                                        <option value="HQ">HQ (63.5 mm)</option>
+                                        <option value="HQ3">HQ3 (61.1 mm)</option>
+                                        <option value="PQ">PQ (83.0 mm)</option>
+                                        <option value="N/A">N/A (No Aplica)</option>
+                                    </select>
+                                </div>
                             </div>
 
-                            <template x-if="coreSizeScope === 'range' || coreSizeScope === 'single'">
-                                <div>
-                                    <label class="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">Muestra Inicio (X):</label>
-                                    <input type="text" x-model="coreSizeStart" class="ac-grid-input w-full" placeholder="Ej: ML157100">
-                                </div>
-                            </template>
-
-                            <template x-if="coreSizeScope === 'range'">
-                                <div>
-                                    <label class="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">Muestra Fin (Y):</label>
-                                    <input type="text" x-model="coreSizeEnd" class="ac-grid-input w-full" placeholder="Ej: ML157110">
-                                </div>
-                            </template>
-
-                            <div>
-                                <label class="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">Tamaño de Núcleo (Core Size):</label>
-                                <select x-model="selectedCoreSize" class="ac-grid-input w-full">
-                                    <option value="">Seleccione Core Size...</option>
-                                    <option value="BQ">BQ (36.5 mm)</option>
-                                    <option value="NQ">NQ (47.6 mm)</option>
-                                    <option value="NQ2">NQ2 (50.5 mm)</option>
-                                    <option value="HQ">HQ (63.5 mm)</option>
-                                    <option value="HQ3">HQ3 (61.1 mm)</option>
-                                    <option value="PQ">PQ (83.0 mm)</option>
-                                    <option value="N/A">N/A (No Aplica)</option>
-                                </select>
+                            <div class="flex justify-end gap-2 pt-2 border-t border-gray-100 dark:border-gray-700">
+                                <button type="button" x-on:click="showCoreSizeModal = false" class="px-3 py-1.5 text-xs font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-lg dark:bg-gray-700 dark:text-gray-300">
+                                    Cancelar
+                                </button>
+                                <button type="button" x-on:click="applyCoreSize()" class="px-4 py-1.5 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-sm">
+                                    Aplicar Core Size
+                                </button>
                             </div>
-                        </div>
-
-                        <div class="flex justify-end gap-2 pt-2 border-t border-gray-100 dark:border-gray-700">
-                            <button type="button" x-on:click="showCoreSizeModal = false" class="px-3 py-1.5 text-xs font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-lg dark:bg-gray-700 dark:text-gray-300">
-                                Cancelar
-                            </button>
-                            <button type="button" x-on:click="applyCoreSize()" class="px-4 py-1.5 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-sm">
-                                Aplicar Core Size
-                            </button>
                         </div>
                     </div>
-                </div>
+                </template>
             </div>
 
             {{-- PASO 3: Tabla de Muestras --}}
-            <div class="ac-table-section ac-animate-in">
-                <div class="ac-table-header">
-                    <div class="ac-table-icon">
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2"
-                            stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round"
-                                d="M3.375 19.5h17.25m-17.25 0a1.125 1.125 0 0 1-1.125-1.125M3.375 19.5h7.5c.621 0 1.125-.504 1.125-1.125m-9.75 0V5.625m0 12.75v-1.5c0-.621.504-1.125 1.125-1.125m18.375 2.625V5.625m0 12.75c0 .621-.504 1.125-1.125 1.125m1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125m0 3.75h-7.5A1.125 1.125 0 0 1 12 18.375m9.75-12.75c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125m19.5 0v1.5c0 .621-.504 1.125-1.125 1.125M2.25 5.625v1.5c0 .621.504 1.125 1.125 1.125m0 0h17.25m-17.25 0h7.5c.621 0 1.125.504 1.125 1.125M3.375 8.25c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125m17.25-3.75h-7.5c-.621 0-1.125.504-1.125 1.125m8.625-1.125c.621 0 1.125.504 1.125 1.125v1.5c0 .621-.504 1.125-1.125 1.125m-17.25 0h7.5m-7.5 0c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125M12 10.875v-1.5m0 1.5c0 .621-.504 1.125-1.125 1.125M12 10.875c0 .621.504 1.125 1.125 1.125m-2.25 0c.621 0 1.125.504 1.125 1.125M10.875 12h-1.5m1.5 0c.621 0 1.125.504 1.125 1.125M12 12h7.5m-7.5 0c0 .621-.504 1.125-1.125 1.125M21.375 12c.621 0 1.125.504 1.125 1.125v1.5c0 .621-.504 1.125-1.125 1.125m-19.5-3.75c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125m19.5 0h-17.25" />
-                        </svg>
-                    </div>
-                    <div class="ac-table-title">Muestras del Barreno</div>
+            <div class="ac-table-header" style="margin-top: 0.5rem; margin-bottom: 0.875rem;">
+                <div class="ac-table-icon">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2"
+                        stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round"
+                            d="M3.375 19.5h17.25m-17.25 0a1.125 1.125 0 0 1-1.125-1.125M3.375 19.5h7.5c.621 0 1.125-.504 1.125-1.125m-9.75 0V5.625m0 12.75v-1.5c0-.621.504-1.125 1.125-1.125m18.375 2.625V5.625m0 12.75c0 .621-.504 1.125-1.125 1.125m1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125m0 3.75h-7.5A1.125 1.125 0 0 1 12 18.375m9.75-12.75c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125m19.5 0v1.5c0 .621-.504 1.125-1.125 1.125M2.25 5.625v1.5c0 .621.504 1.125 1.125 1.125m0 0h17.25m-17.25 0h7.5c.621 0 1.125.504 1.125 1.125M3.375 8.25c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125m17.25-3.75h-7.5c-.621 0-1.125.504-1.125 1.125m8.625-1.125c.621 0 1.125.504 1.125 1.125v1.5c0 .621-.504 1.125-1.125 1.125m-17.25 0h7.5m-7.5 0c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125M12 10.875v-1.5m0 1.5c0 .621-.504 1.125-1.125 1.125M12 10.875c0 .621.504 1.125 1.125 1.125m-2.25 0c.621 0 1.125.504 1.125 1.125M10.875 12h-1.5m1.5 0c.621 0 1.125.504 1.125 1.125M12 12h7.5m-7.5 0c0 .621-.504 1.125-1.125 1.125M21.375 12c.621 0 1.125.504 1.125 1.125v1.5c0 .621-.504 1.125-1.125 1.125m-19.5-3.75c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125m19.5 0h-17.25" />
+                    </svg>
                 </div>
-                {{ $this->table }}
+                <div class="ac-table-title">Muestras del Barreno</div>
             </div>
+            {{ $this->table }}
         @endif
 
     </div>
 
     @push('scripts')
         <script>
+            window.qcSlotUploader = function(slotType, wireProperty) {
+                return {
+                    isDragOver: false,
+                    isUploading: false,
+                    progress: 0,
+                    errorMessage: null,
+                    localPreview: null,
+                    slotType: slotType,
+                    wireProp: wireProperty,
+
+                    async compressImage(file) {
+                        try {
+                            if (typeof window.createImageBitmap !== 'function') return file;
+                            const bmp = await createImageBitmap(file);
+                            const maxDim = 1920;
+                            const maxCurrent = Math.max(bmp.width, bmp.height);
+                            const scale = maxCurrent > maxDim ? (maxDim / maxCurrent) : 1;
+                            const canvas = document.createElement('canvas');
+                            canvas.width = Math.round(bmp.width * scale);
+                            canvas.height = Math.round(bmp.height * scale);
+                            const ctx = canvas.getContext('2d');
+                            if (!ctx) return file;
+                            ctx.drawImage(bmp, 0, 0, canvas.width, canvas.height);
+                            const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.82));
+                            if (!blob) return file;
+                            const baseName = (file.name || 'qc_photo').replace(/\.[^/.]+$/, "");
+                            return new File([blob], baseName + ".jpg", { type: 'image/jpeg' });
+                        } catch (e) {
+                            console.warn('Compresión client-side no disponible, usando original:', e);
+                            return file;
+                        }
+                    },
+
+                    async processFile(file) {
+                        if (!file) return;
+                        if (!file.type || (!file.type.startsWith('image/') && !file.name.match(/\.(jpe?g|png|webp|heic|heif)$/i))) {
+                            this.errorMessage = 'Por favor selecciona un archivo de imagen válido (JPG, PNG o WEBP).';
+                            return;
+                        }
+                        this.errorMessage = null;
+                        try {
+                            if (this.localPreview) URL.revokeObjectURL(this.localPreview);
+                            this.localPreview = URL.createObjectURL(file);
+                        } catch (e) {
+                            this.localPreview = null;
+                        }
+                        this.isUploading = true;
+                        this.progress = 10;
+                        try {
+                            let finalFile = file;
+                            try {
+                                finalFile = await this.compressImage(file);
+                            } catch (errCompress) {
+                                finalFile = file;
+                            }
+                            this.progress = 25;
+                            this.$wire.upload(
+                                this.wireProp,
+                                finalFile,
+                                () => { this.isUploading = false; this.progress = 100; },
+                                (error) => {
+                                    this.isUploading = false;
+                                    this.progress = 0;
+                                    if (this.localPreview) { URL.revokeObjectURL(this.localPreview); this.localPreview = null; }
+                                    this.errorMessage = 'Error al subir la fotografía. Por favor intenta de nuevo.';
+                                },
+                                (event) => {
+                                    if (event && event.detail && typeof event.detail.progress !== 'undefined') {
+                                        this.progress = 25 + Math.round(event.detail.progress * 0.72);
+                                    }
+                                }
+                            );
+                        } catch (err) {
+                            this.isUploading = false;
+                            this.progress = 0;
+                            if (this.localPreview) { URL.revokeObjectURL(this.localPreview); this.localPreview = null; }
+                            this.errorMessage = 'Error al procesar el archivo seleccionado.';
+                        }
+                    },
+
+                    handleDrop(event) {
+                        this.isDragOver = false;
+                        const files = event.dataTransfer?.files;
+                        if (files && files.length > 0) this.processFile(files[0]);
+                    },
+
+                    handleInput(event) {
+                        const files = event.target?.files;
+                        if (files && files.length > 0) this.processFile(files[0]);
+                        event.target.value = '';
+                    }
+                };
+            };
+
+            const registerQcSlotComponent = () => {
+                if (typeof window.Alpine !== 'undefined') {
+                    window.Alpine.data('qcSlotUploader', window.qcSlotUploader);
+                }
+            };
+            registerQcSlotComponent();
+            document.addEventListener('alpine:init', registerQcSlotComponent);
+
             document.addEventListener('alpine:init', () => {
                 Alpine.data('agileCaptureGrid', (initialBarrenoId = null) => ({
                     samples: [],

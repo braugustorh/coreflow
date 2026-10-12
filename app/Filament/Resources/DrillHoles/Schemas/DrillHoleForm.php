@@ -40,6 +40,7 @@ class DrillHoleForm
                             TextInput::make('nombre_barreno')
                                 ->label('ID de Barreno')
                                 ->placeholder('Ej. DDH-001 / MLE26-039')
+                                ->default(fn () => request()->query('nombre_barreno'))
                                 ->required()
                                 ->maxLength(100)
                                 ->unique(table: 'drill_holes', column: 'nombre_barreno', ignoreRecord: true)

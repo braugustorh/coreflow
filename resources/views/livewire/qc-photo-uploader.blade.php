@@ -526,7 +526,7 @@
     </style>
 
     <script>
-        function qcSlotUploader(slotType, wireProperty) {
+        window.qcSlotUploader = function(slotType, wireProperty) {
             return {
                 isDragOver: false,
                 isUploading: false,
@@ -654,6 +654,14 @@
                     event.target.value = '';
                 }
             };
+        };
+
+        if (typeof window.Alpine !== 'undefined') {
+            window.Alpine.data('qcSlotUploader', window.qcSlotUploader);
+        } else {
+            document.addEventListener('alpine:init', () => {
+                window.Alpine.data('qcSlotUploader', window.qcSlotUploader);
+            });
         }
     </script>
 

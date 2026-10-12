@@ -28,7 +28,9 @@ use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Columns\TextInputColumn;
 use Filament\Tables\Concerns\InteractsWithTable;
 use Filament\Tables\Contracts\HasTable;
+use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
 use Livewire\Attributes\On;
@@ -59,74 +61,144 @@ class AgileCapture extends Page implements HasForms, HasTable
     public ?DrillHole $barreno = null;
     public bool $isLoadingBarreno = false;
 
-    // Ya no usamos el state de captureData ni getForms, usamos batch desde Alpine.
+    /**
+     * Obtiene la lista de coincidencias en tiempo real mientras el usuario escribe.
+     */
+    public function getBarrenoSuggestionsProperty(): Collection
+    {
+        $term = trim((string) $this->searchBarreno);
+        if (mb_strlen($term) < 1) {
+            return collect();
+        }
 
-    public function selectBarreno()
+        return DrillHole::query()
+            ->with(['sede:id,name', 'proyecto:id,nombre'])
+            ->withCount('drillHoleSamples')
+            ->where('nombre_barreno', 'like', "%{$term}%")
+            ->orderByRaw("CASE WHEN nombre_barreno = ? THEN 0 WHEN nombre_barreno LIKE ? THEN 1 WHEN nombre_barreno LIKE ? THEN 2 ELSE 3 END", [$term, "{$term}%", "%{$term}%"])
+            ->orderBy('nombre_barreno', 'asc')
+            ->limit(10)
+            ->get();
+    }
+
+    /**
+     * Selecciona un barreno directamente por su ID (desde el dropdown de sugerencias).
+     */
+    public function selectBarrenoById(int $id): void
     {
         $this->isLoadingBarreno = true;
+        $barreno = DrillHole::find($id);
 
-        if (!empty($this->searchBarreno)) {
-            $this->barreno = DrillHole::where('nombre_barreno', $this->searchBarreno)->first();
+        if (!$barreno) {
+            $this->isLoadingBarreno = false;
+            return;
+        }
+
+        $this->barreno = $barreno;
+        $this->searchBarreno = $barreno->nombre_barreno;
+        $this->loadSelectedBarrenoData();
+    }
+
+    /**
+     * Busca y selecciona el barreno ingresado en el input.
+     */
+    public function selectBarreno(): void
+    {
+        $this->isLoadingBarreno = true;
+        $term = trim((string) $this->searchBarreno);
+
+        if (!empty($term)) {
+            $this->barreno = DrillHole::where('nombre_barreno', $term)->first();
 
             if (!$this->barreno) {
-                \Filament\Notifications\Notification::make()
-                    ->title('Barreno no encontrado')
-                    ->body('El barreno ingresado no existe en los registros.')
-                    ->danger()
-                    ->actions([
-                        \Filament\Actions\Action::make('crear')
-                            ->label('Crear Barreno')
-                            ->url(\App\Filament\Resources\DrillHoles\DrillHoleResource::getUrl('create'))
-                            ->button(),
-                    ])
-                    ->send();
+                // Si no coincide exacto, pero hay una coincidencia única que inicia con el término
+                $prefixMatches = DrillHole::where('nombre_barreno', 'like', "{$term}%")->get();
+                if ($prefixMatches->count() === 1) {
+                    $this->barreno = $prefixMatches->first();
+                    $this->searchBarreno = $this->barreno->nombre_barreno;
+                } else {
+                    Notification::make()
+                        ->title('Barreno no encontrado')
+                        ->body("No se encontró ningún barreno con el nombre \"{$term}\".")
+                        ->danger()
+                        ->actions([
+                            \Filament\Actions\Action::make('crear')
+                                ->label("Crear Barreno \"{$term}\"")
+                                ->url(\App\Filament\Resources\DrillHoles\DrillHoleResource::getUrl('create', ['nombre_barreno' => $term]))
+                                ->button(),
+                        ])
+                        ->send();
 
-                $this->isLoadingBarreno = false;
-                return;
+                    $this->isLoadingBarreno = false;
+                    return;
+                }
             }
 
-            $this->selectedBarrenoId = $this->barreno->id;
-
-            $lastSample = DrillHoleSample::where('barreno_id', $this->barreno->id)
-                ->orderBy('id', 'desc')
-                ->first();
-
-            $lastOriginalSample = DrillHoleSample::where('barreno_id', $this->barreno->id)
-                ->where('sample_type', 'O')
-                ->orderBy('id', 'desc')
-                ->first();
-
-            $existingIntervals = DrillHoleSample::where('barreno_id', $this->barreno->id)
-                ->where('sample_type', 'O')
-                ->whereNotNull('from_depth')
-                ->whereNotNull('to_depth')
-                ->get(['from_depth', 'to_depth'])
-                ->toArray();
-
-            $existingSampleNumbers = DrillHoleSample::where('proyecto_id', $this->barreno->proyecto_id)
-                ->pluck('sample_number')
-                ->toArray();
-
-            $nextSampleNumber = '';
-            if ($lastSample && $lastSample->sample_number) {
-                $nextSampleNumber = $lastSample->sample_number;
-                $nextSampleNumber++; // Incrementa automáticamente
-            }
-
-            // Emitimos evento para que Alpine.js reaccione e inicie el batch
-            $this->dispatch('barreno-selected', [
-                'selectedBarrenoId' => $this->barreno->id,
-                'nextSampleNumber' => $nextSampleNumber,
-                'fromDepth' => $lastOriginalSample ? $lastOriginalSample->to_depth : 0,
-                'proyectoId' => $this->barreno->proyecto_id,
-                'sampledAt' => $lastSample && $lastSample->sampled_at
-                    ? $lastSample->sampled_at->format('Y-m-d H:i:s')
-                    : now()->format('Y-m-d H:i:s'),
-                'existingIntervals' => $existingIntervals,
-                'existingSampleNumbers' => $existingSampleNumbers,
-                'maxDepth' => $this->barreno->max_depth,
-            ]);
+            $this->loadSelectedBarrenoData();
         }
+
+        $this->isLoadingBarreno = false;
+    }
+
+    /**
+     * Limpia la selección actual del barreno para buscar otro.
+     */
+    public function clearBarreno(): void
+    {
+        $this->searchBarreno = '';
+        $this->selectedBarrenoId = null;
+        $this->barreno = null;
+        $this->isLoadingBarreno = false;
+        $this->flushCachedTableRecords();
+        $this->resetPage();
+    }
+
+    /**
+     * Carga las métricas, intervalos y estado de captura del barreno seleccionado.
+     */
+    protected function loadSelectedBarrenoData(): void
+    {
+        $this->selectedBarrenoId = $this->barreno->id;
+
+        $lastSample = DrillHoleSample::where('barreno_id', $this->barreno->id)
+            ->orderBy('id', 'desc')
+            ->first();
+
+        $lastOriginalSample = DrillHoleSample::where('barreno_id', $this->barreno->id)
+            ->where('sample_type', 'O')
+            ->orderBy('id', 'desc')
+            ->first();
+
+        $existingIntervals = DrillHoleSample::where('barreno_id', $this->barreno->id)
+            ->where('sample_type', 'O')
+            ->whereNotNull('from_depth')
+            ->whereNotNull('to_depth')
+            ->get(['from_depth', 'to_depth'])
+            ->toArray();
+
+        $existingSampleNumbers = DrillHoleSample::where('proyecto_id', $this->barreno->proyecto_id)
+            ->pluck('sample_number')
+            ->toArray();
+
+        $nextSampleNumber = '';
+        if ($lastSample && $lastSample->sample_number) {
+            $nextSampleNumber = $lastSample->sample_number;
+            $nextSampleNumber++; // Incrementa automáticamente
+        }
+
+        // Emitimos evento para que Alpine.js reaccione e inicie el batch
+        $this->dispatch('barreno-selected', [
+            'selectedBarrenoId' => $this->barreno->id,
+            'nextSampleNumber' => $nextSampleNumber,
+            'fromDepth' => $lastOriginalSample ? $lastOriginalSample->to_depth : 0,
+            'proyectoId' => $this->barreno->proyecto_id,
+            'sampledAt' => $lastSample && $lastSample->sampled_at
+                ? $lastSample->sampled_at->format('Y-m-d H:i:s')
+                : now()->format('Y-m-d H:i:s'),
+            'existingIntervals' => $existingIntervals,
+            'existingSampleNumbers' => $existingSampleNumbers,
+            'maxDepth' => $this->barreno->max_depth,
+        ]);
 
         $this->isLoadingBarreno = false;
 
@@ -605,6 +677,104 @@ class AgileCapture extends Page implements HasForms, HasTable
                     ->modalHeading('Eliminar Muestra')
                     ->modalDescription('¿Estás seguro de que deseas eliminar esta muestra? Esta acción no se puede deshacer.')
                     ->modalSubmitActionLabel('Sí, eliminar'),
+            ])
+            ->filters([
+                SelectFilter::make('tipo_muestra')
+                    ->label('Tipo de Muestra')
+                    ->placeholder('Todos los tipos')
+                    ->options([
+                        'O'         => 'Originales (O)',
+                        'standard'  => 'Estándares (STD)',
+                        'blank'     => 'Blancos (BLANK)',
+                        'duplicate' => 'Duplicados (DUP)',
+                        'control'   => 'Todos los Controles (QA/QC)',
+                    ])
+                    ->query(function (Builder $query, array $data): Builder {
+                        $value = $data['value'] ?? null;
+                        if (!$value) {
+                            return $query;
+                        }
+
+                        return match ($value) {
+                            'O' => $query->where(function (Builder $q) {
+                                $q->where('sample_type', 'O')
+                                  ->orWhere('sample_type', 'Original')
+                                  ->orWhere(fn($sub) => $sub->whereNull('sample_type')->whereNull('control_type'));
+                            }),
+                            'standard' => $query->where(function (Builder $q) {
+                                $q->where(function ($sub) {
+                                    $sub->where('control_type', 'Standard')
+                                        ->orWhere('control_type', 'Estándar')
+                                        ->orWhere('control_type', 'like', 'STD-%');
+                                });
+                            }),
+                            'blank' => $query->where(function (Builder $q) {
+                                $q->where(function ($sub) {
+                                    $sub->where('control_type', 'like', 'Blank%')
+                                        ->orWhere('control_type', 'like', 'BLANK%')
+                                        ->orWhere('control_type', 'Blanco');
+                                });
+                            }),
+                            'duplicate' => $query->where(function (Builder $q) {
+                                $q->whereNotNull('duplicate_sample_id')
+                                  ->orWhere('control_type', 'like', '%Dup%')
+                                  ->orWhere('control_type', 'like', '%DUP%')
+                                  ->orWhere('control_type', 'Duplicado');
+                            }),
+                            'control' => $query->where('sample_type', 'Control'),
+                            default => $query,
+                        };
+                    }),
+
+                SelectFilter::make('work_order_status')
+                    ->label('Estado Work Order')
+                    ->placeholder('Todas las muestras')
+                    ->options([
+                        'with_wo'    => 'Con Work Order asignada',
+                        'without_wo' => 'Sin Work Order (Pendientes)',
+                    ])
+                    ->query(function (Builder $query, array $data): Builder {
+                        return match ($data['value'] ?? null) {
+                            'with_wo'    => $query->whereNotNull('work_order_id'),
+                            'without_wo' => $query->whereNull('work_order_id'),
+                            default      => $query,
+                        };
+                    }),
+
+                SelectFilter::make('work_order_id')
+                    ->label('Work Order')
+                    ->placeholder('Cualquier Work Order')
+                    ->relationship('workOrder', 'work_order_code')
+                    ->searchable()
+                    ->preload(),
+
+                SelectFilter::make('core_size')
+                    ->label('Core Size')
+                    ->placeholder('Todos los tamaños')
+                    ->options([
+                        'PQ'          => 'PQ (85.0 mm)',
+                        'HQ'          => 'HQ (63.5 mm)',
+                        'HQ3'         => 'HQ3 (61.1 mm)',
+                        'NQ'          => 'NQ (47.6 mm)',
+                        'NQ2'         => 'NQ2 (50.5 mm)',
+                        'BQ'          => 'BQ (36.4 mm)',
+                        'N/A'         => 'N/A (No Aplica)',
+                        'sin_asignar' => 'Sin Core Size (Pendientes)',
+                    ])
+                    ->query(function (Builder $query, array $data): Builder {
+                        $value = $data['value'] ?? null;
+                        if (!$value) {
+                            return $query;
+                        }
+
+                        if ($value === 'sin_asignar') {
+                            return $query->where(function (Builder $q) {
+                                $q->whereNull('core_size')->orWhere('core_size', '');
+                            });
+                        }
+
+                        return $query->where('core_size', $value);
+                    }),
             ])
             ->headerActions([
                 TableAction::make('qcPhotosEvidence')
