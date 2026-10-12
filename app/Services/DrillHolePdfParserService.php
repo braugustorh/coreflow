@@ -20,6 +20,38 @@ class DrillHolePdfParserService
      */
     public function parsePdf(mixed $file): array
     {
+        if (is_array($file)) {
+            $file = reset($file);
+        }
+
+        // 1. Si es una ruta almacenada en el disco cloud coreflow
+        if (is_string($file) && !empty($file)) {
+            if (Storage::disk('coreflow')->exists($file)) {
+                try {
+                    $content = Storage::disk('coreflow')->get($file);
+                    $parser = new PdfParser();
+                    $pdf = $parser->parseContent($content);
+                    return $this->extractDataFromText($pdf->getText());
+                } catch (Exception $e) {
+                    Log::error("Error parseando PDF desde disco coreflow: " . $e->getMessage());
+                    return [];
+                }
+            }
+
+            if (Storage::disk('public')->exists($file) && !file_exists($file)) {
+                try {
+                    $content = Storage::disk('public')->get($file);
+                    $parser = new PdfParser();
+                    $pdf = $parser->parseContent($content);
+                    return $this->extractDataFromText($pdf->getText());
+                } catch (Exception $e) {
+                    Log::error("Error parseando PDF desde disco public: " . $e->getMessage());
+                    return [];
+                }
+            }
+        }
+
+        // 2. Si es UploadedFile, TemporaryUploadedFile o ruta local
         $fullPath = $this->resolveFilePath($file);
 
         if (!$fullPath || !file_exists($fullPath)) {

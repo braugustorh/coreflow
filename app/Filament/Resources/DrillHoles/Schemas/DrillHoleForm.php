@@ -15,12 +15,13 @@ use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Components\Utilities\Set;
+use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
 
 class DrillHoleForm
 {
     public static function configure(Schema $schema): Schema
     {
-        $canEditAdvanced = auth()->user()?->hasAnyRole(['super_admin', 'super-admin', 'Administrador', 'Admin', 'Supervisor Coreshack', 'Supervisor']) ?? false;
+        $canEditAdvanced = auth()->user()?->hasAnyRole(['super_admin', 'super-admin', 'Administrador', 'Admin', 'Supervisor Coreshack', 'Supervisor','Admin CoreFlow']) ?? false;
 
         return $schema
             ->columns(2)
@@ -237,8 +238,20 @@ class DrillHoleForm
                         ->schema([
                             FileUpload::make('survey_pdf_path')
                                 ->label('Informe de Levantamiento / Verificación (PDF)')
-                                ->disk('public')
-                                ->directory('survey_reports')
+                                ->disk(DrillHole::SURVEY_DISK)
+                                ->directory(function (Get $get, ?DrillHole $record): string {
+                                    $barreno = $get('nombre_barreno') ?: $record?->nombre_barreno ?: 'BARRENO';
+                                    $clean = trim(preg_replace('/[\/\\\\]/', '_', (string) $barreno));
+                                    return "Control/{$clean}/topografico";
+                                })
+                                ->getUploadedFileNameForStorageUsing(function (TemporaryUploadedFile $file, Get $get, ?DrillHole $record): string {
+                                    $barreno = $get('nombre_barreno') ?: $record?->nombre_barreno ?: 'BARRENO';
+                                    $clean = trim(preg_replace('/[\/\\\\]/', '_', (string) $barreno));
+                                    $ext = strtolower($file->getClientOriginalExtension() ?: 'pdf');
+                                    return "{$clean}.{$ext}";
+                                })
+                                ->openable()
+                                ->downloadable()
                                 ->acceptedFileTypes(['application/pdf'])
                                 ->maxSize(10240) // 10MB
                                 ->live()

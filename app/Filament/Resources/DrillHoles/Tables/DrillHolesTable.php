@@ -146,6 +146,8 @@ class DrillHolesTable
                         }
                         return 'heroicon-o-check-circle';
                     })
+                    ->url(fn (DrillHole $record): ?string => $record->hasSurveyPdf() ? $record->survey_pdf_url : null, shouldOpenInNewTab: true)
+                    ->tooltip(fn (DrillHole $record): ?string => $record->hasSurveyPdf() ? 'Clic para abrir el informe topográfico' : null)
                     ->sortable(),
 
                 // ─── Columna Badge de Estado de Gaps ────────────────────────

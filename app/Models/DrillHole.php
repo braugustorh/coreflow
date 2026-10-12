@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Attributes\ObservedBy;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Facades\Storage;
 
 #[ObservedBy([DrillHoleObserver::class])]
 class DrillHole extends Model
@@ -82,11 +83,32 @@ class DrillHole extends Model
     }
 
     /**
+     * Disco de almacenamiento configurado para el certificado topográfico.
+     */
+    public const SURVEY_DISK = 'coreflow';
+
+    /**
      * Determina si el barreno tiene un reporte PDF adjunto.
      */
     public function hasSurveyPdf(): bool
     {
         return !empty($this->survey_pdf_path);
+    }
+
+    /**
+     * Retorna la URL pública o accesible del reporte topográfico.
+     */
+    public function getSurveyPdfUrlAttribute(): ?string
+    {
+        if (empty($this->survey_pdf_path)) {
+            return null;
+        }
+
+        if (Storage::disk(self::SURVEY_DISK)->exists($this->survey_pdf_path)) {
+            return Storage::disk(self::SURVEY_DISK)->url($this->survey_pdf_path);
+        }
+
+        return Storage::disk('public')->url($this->survey_pdf_path);
     }
 
     /**
