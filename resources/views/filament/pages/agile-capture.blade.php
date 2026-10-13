@@ -652,6 +652,13 @@
             z-index: 50 !important;
         }
 
+        /* Botón con estado optimista inmediato (0ms) */
+        button[data-optimistic-loading="true"] {
+            pointer-events: none !important;
+            opacity: 0.75 !important;
+            cursor: wait !important;
+        }
+
         .ac-animate-in:nth-child(2) {
             animation-delay: 0.05s;
         }
@@ -1799,6 +1806,43 @@
                     }
                 }));
             });
+
+            // Control optimista anti-doble clic y spinner instantáneo (0ms) en acciones de tabla
+            document.addEventListener('click', function(e) {
+                const btn = e.target.closest('button[x-on\\:click*="mountAction"], .fi-ta-header-actions button.fi-btn, .fi-ta-bulk-actions button.fi-btn, button.fi-ac-btn-action');
+                if (!btn) return;
+
+                if (btn.dataset.optimisticLoading === 'true') {
+                    e.preventDefault();
+                    e.stopImmediatePropagation();
+                    return false;
+                }
+
+                btn.dataset.optimisticLoading = 'true';
+                btn.classList.add('pointer-events-none', 'opacity-70', 'cursor-wait');
+
+                const spinner = btn.querySelector('.fi-loading-indicator');
+                const normalIcon = btn.querySelector('svg:not(.fi-loading-indicator)');
+                if (spinner) {
+                    spinner.style.display = 'inline-block';
+                    if (normalIcon) normalIcon.style.display = 'none';
+                }
+
+                const resetBtn = function() {
+                    btn.dataset.optimisticLoading = 'false';
+                    btn.classList.remove('pointer-events-none', 'opacity-70', 'cursor-wait');
+                    if (spinner) spinner.style.display = '';
+                    if (normalIcon) normalIcon.style.display = '';
+                };
+
+                if (window.Livewire) {
+                    const unhook = Livewire.hook('commit', function() {
+                        resetBtn();
+                        if (typeof unhook === 'function') unhook();
+                    });
+                }
+                setTimeout(resetBtn, 4000);
+            }, true);
         </script>
     @endpush
 </x-filament-panels::page>

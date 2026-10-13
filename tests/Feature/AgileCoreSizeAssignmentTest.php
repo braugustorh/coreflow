@@ -7,6 +7,7 @@ use App\Models\DrillHoleSample;
 use App\Models\Proyecto;
 use App\Models\Sede;
 use App\Models\User;
+use App\Models\WorkOrder;
 use App\Services\SampleValidationService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -79,5 +80,44 @@ class AgileCoreSizeAssignmentTest extends TestCase
         $this->assertEquals('HQ3', $s1->core_size);
         $this->assertEquals('HQ3', $s2->core_size);
         $this->assertNull($sOther->core_size);
+    }
+
+    public function test_assign_work_order_batch_updates_samples_and_recalculates_counts(): void
+    {
+        $sede      = Sede::create(['name' => 'San Miguel', 'code' => 'SM', 'country' => 'Mexico', 'state' => 'Guerrero', 'city' => 'San Miguel']);
+        $proyecto  = Proyecto::create(['nombre' => 'Test Proj', 'code' => 'TP', 'sede_id' => $sede->id]);
+        $barreno   = DrillHole::create(['proyecto_id' => $proyecto->id, 'nombre_barreno' => 'DH001', 'core_size' => 'HQ']);
+        $user      = User::factory()->create();
+
+        $woOld = WorkOrder::create(['work_order_code' => 'WO-OLD', 'sede_id' => $sede->id, 'samples_quantity' => 2]);
+        $woNew = WorkOrder::create(['work_order_code' => 'WO-NEW', 'sede_id' => $sede->id, 'samples_quantity' => 0]);
+
+        $s1 = DrillHoleSample::create([
+            'proyecto_id' => $proyecto->id, 'barreno_id' => $barreno->id, 'user_id' => $user->id,
+            'status' => 'draft', 'capture_source' => 'import', 'sample_type' => 'O', 'sample_number' => 'ML100',
+            'from_depth' => 0, 'to_depth' => 1, 'sample_length' => 1, 'length' => 1, 'weight' => 2.5, 'core_size' => 'HQ',
+            'work_order_id' => $woOld->id,
+        ]);
+        $s2 = DrillHoleSample::create([
+            'proyecto_id' => $proyecto->id, 'barreno_id' => $barreno->id, 'user_id' => $user->id,
+            'status' => 'draft', 'capture_source' => 'import', 'sample_type' => 'O', 'sample_number' => 'ML101',
+            'from_depth' => 1, 'to_depth' => 2, 'sample_length' => 1, 'length' => 1, 'weight' => 2.5, 'core_size' => 'HQ',
+            'work_order_id' => $woOld->id,
+        ]);
+
+        // Simular batch update como en assignWorkOrder
+        DrillHoleSample::whereIn('id', [$s1->id, $s2->id])->update(['work_order_id' => $woNew->id]);
+
+        // Recalcular conteos
+        $countOld = DrillHoleSample::where('work_order_id', $woOld->id)->count();
+        WorkOrder::where('id', $woOld->id)->update(['samples_quantity' => $countOld]);
+
+        $countNew = DrillHoleSample::where('work_order_id', $woNew->id)->count();
+        WorkOrder::where('id', $woNew->id)->update(['samples_quantity' => $countNew]);
+
+        $this->assertEquals(0, $woOld->fresh()->samples_quantity);
+        $this->assertEquals(2, $woNew->fresh()->samples_quantity);
+        $this->assertEquals($woNew->id, $s1->fresh()->work_order_id);
+        $this->assertEquals($woNew->id, $s2->fresh()->work_order_id);
     }
 }

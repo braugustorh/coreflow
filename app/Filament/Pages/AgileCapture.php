@@ -149,6 +149,7 @@ class AgileCapture extends Page implements HasForms, HasTable
         $this->selectedBarrenoId = null;
         $this->barreno = null;
         $this->isLoadingBarreno = false;
+        $this->cachedBarrenoMetrics = null;
         $this->flushCachedTableRecords();
         $this->resetPage();
     }
@@ -202,7 +203,8 @@ class AgileCapture extends Page implements HasForms, HasTable
 
         $this->isLoadingBarreno = false;
 
-        // Invalidar cache de la tabla y forzar re-query con el nuevo barreno
+        // Invalidar cache de métricas y de la tabla
+        $this->cachedBarrenoMetrics = null;
         $this->flushCachedTableRecords();
         $this->resetPage();
     }
@@ -454,6 +456,7 @@ class AgileCapture extends Page implements HasForms, HasTable
         }
 
         if ($savedCount > 0) {
+            $this->cachedBarrenoMetrics = null;
             $this->flushCachedTableRecords();
             $this->resetPage();
 
@@ -516,7 +519,7 @@ class AgileCapture extends Page implements HasForms, HasTable
         return $table
             ->query(
                 fn() => DrillHoleSample::query()
-                    ->with(['standardSample', 'qcPhotos'])
+                    ->with(['standardSample', 'qcPhotos', 'workOrder', 'barreno'])
                     ->withCount('qcPhotos')
                     ->where('barreno_id', $this->selectedBarrenoId ?? -1)
                     ->orderBy('sample_number', 'asc')
@@ -959,29 +962,38 @@ class AgileCapture extends Page implements HasForms, HasTable
                     ->label('Asignar Work Order')
                     ->icon('heroicon-o-briefcase')
                     ->form(function () {
-                        // Obtener sede del barreno actual vía proyecto
-                        $sedeId = null;
-                        if ($this->selectedBarrenoId) {
-                            $sample = DrillHoleSample::where('barreno_id', $this->selectedBarrenoId)
-                                ->with('proyecto')
-                                ->first();
-                            $sedeId = $sample?->proyecto?->sede_id;
+                        // Obtener sede del barreno actual de forma directa y optimizada
+                        $sedeId = $this->barreno?->sede_id;
+                        if (!$sedeId && $this->selectedBarrenoId) {
+                            $sedeId = DrillHole::where('id', $this->selectedBarrenoId)->value('sede_id')
+                                ?? DrillHole::where('id', $this->selectedBarrenoId)->with('proyecto')->first()?->proyecto?->sede_id;
                         }
 
                         return [
                             Select::make('work_order_id')
                                 ->label('Work Order')
                                 ->options(function () use ($sedeId) {
-                                    $query = WorkOrder::query();
+                                    $query = WorkOrder::query()
+                                        ->select(['id', 'work_order_code', 'samples_quantity']);
+
                                     if ($sedeId) {
                                         $query->where('sede_id', $sedeId);
                                     }
-                                    // Solo WOs que NO han sido enviadas al laboratorio
+
+                                    // Descartar de inmediato WOs ya enviadas al laboratorio (filtro indexado rápido)
+                                    $query->where(function ($q) {
+                                        $q->where('sent_to_lab', false)->orWhereNull('sent_to_lab');
+                                    });
+
+                                    // Solo WOs que NO tienen muestras archivadas
                                     $query->whereDoesntHave('drillHoleSamples', fn($q) => $q->where('is_archived', true));
-                                    return $query->get()->mapWithKeys(
-                                        fn($wo) =>
-                                        [$wo->id => "{$wo->work_order_code} (muestras: {$wo->samples_quantity})"]
-                                    );
+
+                                    return $query->orderByDesc('id')
+                                        ->get()
+                                        ->mapWithKeys(
+                                            fn($wo) =>
+                                            [$wo->id => "{$wo->work_order_code} (muestras: {$wo->samples_quantity})"]
+                                        );
                                 })
                                 ->searchable()
                                 ->required()
@@ -1004,10 +1016,11 @@ class AgileCapture extends Page implements HasForms, HasTable
                     })
                     ->action(function (Collection $records, array $data) {
                         // Verificar que ninguna muestra seleccionada pertenezca a una WO ya enviada
-                        $lockedSamples = $records->filter(
-                            fn(DrillHoleSample $s) => $s->workOrder?->isSent() ?? false
-                        );
-                        if ($lockedSamples->isNotEmpty()) {
+                        $hasLockedSamples = $records->contains(function (DrillHoleSample $s) {
+                            return $s->is_archived || ($s->workOrder?->isSent() ?? false);
+                        });
+
+                        if ($hasLockedSamples) {
                             \Filament\Notifications\Notification::make()
                                 ->title('Operación no permitida')
                                 ->body('Una o más muestras seleccionadas ya pertenecen a una Work Order enviada al laboratorio y no pueden reasignarse.')
@@ -1076,21 +1089,19 @@ class AgileCapture extends Page implements HasForms, HasTable
                             ->unique()
                             ->values();
 
-                        // Asignar la nueva WO a todas las muestras seleccionadas
-                        foreach ($records as $record) {
-                            $record->update(['work_order_id' => $workOrder->id]);
+                        // 1 solo query batch para asignar la nueva WO a todas las muestras seleccionadas
+                        $targetIds = $records->pluck('id')->all();
+                        DrillHoleSample::whereIn('id', $targetIds)
+                            ->update(['work_order_id' => $workOrder->id]);
+
+                        // Recalcular conteo de WOs afectadas (anteriores + nueva) con 1 query por WO afectada
+                        $affectedWoIds = $previousWoIds->push($workOrder->id)->unique()->filter()->values();
+                        foreach ($affectedWoIds as $woIdToUpdate) {
+                            $this->recalcularWO($woIdToUpdate);
                         }
 
-                        // Recalcular conteo de WOs anteriores afectadas
-                        foreach ($previousWoIds as $prevWoId) {
-                            if ($prevWoId === $workOrder->id)
-                                continue; // La nueva WO se recalcula abajo
-                            $this->recalcularWO($prevWoId);
-                        }
-
-                        // Recalcular conteo de la WO nueva/seleccionada
-                        $this->recalcularWO($workOrder->id);
-
+                        $this->cachedBarrenoMetrics = null;
+                        $this->flushCachedTableRecords();
                         $this->resetPage();
 
                         \Filament\Notifications\Notification::make()
@@ -1107,11 +1118,8 @@ class AgileCapture extends Page implements HasForms, HasTable
      */
     private function recalcularWO(int $woId): void
     {
-        $wo = WorkOrder::find($woId);
-        if ($wo) {
-            $wo->samples_quantity = DrillHoleSample::where('work_order_id', $woId)->count();
-            $wo->save();
-        }
+        $count = DrillHoleSample::where('work_order_id', $woId)->count();
+        WorkOrder::where('id', $woId)->update(['samples_quantity' => $count]);
     }
 
     protected function generateZpl($records)
@@ -1130,26 +1138,69 @@ class AgileCapture extends Page implements HasForms, HasTable
         }, 'etiquetas_' . time() . '.zpl');
     }
 
+    protected ?array $cachedBarrenoMetrics = null;
+
+    /**
+     * Consolidar consultas de métricas del barreno en una sola consulta SQL optimizada.
+     */
+    protected function getBarrenoMetrics(): array
+    {
+        if ($this->cachedBarrenoMetrics !== null) {
+            return $this->cachedBarrenoMetrics;
+        }
+
+        if (!$this->selectedBarrenoId) {
+            return $this->cachedBarrenoMetrics = [
+                'total' => 0,
+                'estandares' => 0,
+                'blancos' => 0,
+                'duplicados' => 0,
+                'pending_qc' => 0,
+            ];
+        }
+
+        $row = DrillHoleSample::where('barreno_id', $this->selectedBarrenoId)
+            ->selectRaw('
+                COUNT(*) as total,
+                SUM(CASE WHEN control_type = "Standard" THEN 1 ELSE 0 END) as estandares,
+                SUM(CASE WHEN control_type LIKE "BLANK%" THEN 1 ELSE 0 END) as blancos,
+                SUM(CASE WHEN control_type = "Duplicate" THEN 1 ELSE 0 END) as duplicados,
+                SUM(CASE WHEN UPPER(TRIM(sample_type)) = "CONTROL"
+                         AND duplicate_sample_id IS NULL
+                         AND (control_type IS NULL OR UPPER(control_type) NOT LIKE "%DUP%")
+                         AND (SELECT COUNT(*) FROM qc_sample_photos WHERE qc_sample_photos.drill_hole_sample_id = drill_hole_samples.id) < 2
+                    THEN 1 ELSE 0 END) as pending_qc
+            ')
+            ->first();
+
+        return $this->cachedBarrenoMetrics = [
+            'total' => (int) ($row?->total ?? 0),
+            'estandares' => (int) ($row?->estandares ?? 0),
+            'blancos' => (int) ($row?->blancos ?? 0),
+            'duplicados' => (int) ($row?->duplicados ?? 0),
+            'pending_qc' => (int) ($row?->pending_qc ?? 0),
+        ];
+    }
+
     // Calculators for Widgets
     public function getTotalMuestrasProperty(): int
     {
-        return $this->selectedBarrenoId ? DrillHoleSample::where('barreno_id', $this->selectedBarrenoId)->count() : 0;
+        return $this->getBarrenoMetrics()['total'];
     }
 
     public function getTotalEstandaresProperty(): int
     {
-        return $this->selectedBarrenoId ? DrillHoleSample::where('barreno_id', $this->selectedBarrenoId)->where('control_type', 'Standard')->count() : 0;
+        return $this->getBarrenoMetrics()['estandares'];
     }
 
     public function getTotalBlancosProperty(): int
     {
-        // Cubre BLANK, BLANK-ML, BLANK-SN, etc.
-        return $this->selectedBarrenoId ? DrillHoleSample::where('barreno_id', $this->selectedBarrenoId)->where('control_type', 'like', 'BLANK%')->count() : 0;
+        return $this->getBarrenoMetrics()['blancos'];
     }
 
     public function getTotalDuplicadosProperty(): int
     {
-        return $this->selectedBarrenoId ? DrillHoleSample::where('barreno_id', $this->selectedBarrenoId)->where('control_type', 'Duplicate')->count() : 0;
+        return $this->getBarrenoMetrics()['duplicados'];
     }
 
     protected function getSampleIdsInRange($samples, string $startStr, string $endStr): array
@@ -1206,19 +1257,13 @@ class AgileCapture extends Page implements HasForms, HasTable
 
     public function getPendingQcPhotosCountProperty(): int
     {
-        if (!$this->selectedBarrenoId) {
-            return 0;
-        }
-
-        return DrillHoleSample::where('barreno_id', $this->selectedBarrenoId)
-            ->requiringQcPhotos()
-            ->missingQcPhotos()
-            ->count();
+        return $this->getBarrenoMetrics()['pending_qc'];
     }
 
     #[On('qc-photos-updated')]
     public function onQcPhotosUpdated(): void
     {
+        $this->cachedBarrenoMetrics = null;
         $this->flushCachedTableRecords();
     }
 }

@@ -8,7 +8,13 @@
     $actionIsModalClosedByClickingAway = $action->isModalClosedByClickingAway();
     $actionIsModalClosedByEscaping = $action->isModalClosedByEscaping();
     $actionModalDescription = $action->getModalDescription();
-    $actionExtraModalWindowAttributeBag = $action->getExtraModalWindowAttributeBag();
+    $actionExtraModalWindowAttributeBag = ($action->getExtraModalWindowAttributeBag() ?? new \Illuminate\View\ComponentAttributeBag())
+        ->merge([
+            'x-data' => '{ isSubmitting: false }',
+            'x-on:submit' => 'if (isSubmitting) { $event.stopImmediatePropagation(); return false; } isSubmitting = true',
+            'x-bind:class' => "{ 'pointer-events-none opacity-85': isSubmitting }",
+            'x-init' => "Livewire.hook('commit', () => { isSubmitting = false })",
+        ]);
     $actionModalFooterActions = $action->getVisibleModalFooterActions();
     $actionModalFooterActionsAlignment = $action->getModalFooterActionsAlignment();
     $actionModalHeading = $action->getModalHeading();
