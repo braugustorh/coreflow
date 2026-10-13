@@ -136,6 +136,7 @@ class EmployeeUsersSeeder extends Seeder
                 'user' => 'emeri.castillo',
                 'is_active' => true,
             ],
+
             [
                 'code' => 'RGR',
                 'name' => 'Raul Guerra',
