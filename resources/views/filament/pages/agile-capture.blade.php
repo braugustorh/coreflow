@@ -729,7 +729,10 @@
         }
 
         .ac-grid-table th {
-            background: rgba(99, 102, 241, 0.1);
+            position: sticky;
+            top: 0;
+            z-index: 10;
+            background: #eef2ff;
             color: #4f46e5;
             padding: 0.75rem;
             text-align: left;
@@ -783,7 +786,7 @@
         }
 
         .dark .ac-grid-table th {
-            background: rgba(99, 102, 241, 0.15);
+            background: #1e2642;
             color: #818cf8;
             border-bottom-color: rgba(99, 102, 241, 0.3);
         }
@@ -865,7 +868,7 @@
 
         {{-- PASO 1: Búsqueda de Barreno con Autocompletado Reactivo --}}
         <div class="ac-search-section ac-animate-in"
-             x-data="{ 
+             x-data="{
                  isOpen: false,
                  handleKeydown(e) {
                      if (e.key === 'Escape') {
@@ -902,7 +905,7 @@
 
                     {{-- Controles integrados en el input: Spinner y Limpiar --}}
                     <div class="ac-input-controls">
-                        <div wire:loading wire:target="searchBarreno" class="ac-input-spinner">
+                        <div wire:loading wire:target="searchBarreno,selectBarrenoById,selectBarreno" class="ac-input-spinner">
                             <svg fill="none" viewBox="0 0 24 24">
                                 <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                                 <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
@@ -911,7 +914,7 @@
                         @if(!empty(trim($searchBarreno)))
                             <button type="button"
                                 wire:loading.remove
-                                wire:target="searchBarreno"
+                                wire:target="searchBarreno,selectBarrenoById,selectBarreno"
                                 wire:click="clearBarreno"
                                 @click="isOpen = false"
                                 class="ac-input-clear-btn"
@@ -1022,11 +1025,16 @@
                     @endif
                 </div>
 
-                <x-filament::button wire:click="selectBarreno" wire:loading.attr="disabled"
-                    icon="heroicon-m-magnifying-glass" color="primary">
-                    <span wire:loading.remove wire:target="selectBarreno">Buscar</span>
-                    <span wire:loading wire:target="selectBarreno">Buscando…</span>
-                </x-filament::button>
+            </div>
+
+            {{-- Indicador de carga al seleccionar un barreno --}}
+            <div wire:loading.flex wire:target="selectBarrenoById,selectBarreno"
+                 style="align-items:center; gap:8px; padding:10px 14px; margin-top:8px; border-radius:8px; background:#eff6ff; color:#1d4ed8; font-size:13px; font-weight:600;">
+                <svg style="width:18px;height:18px;" class="animate-spin" fill="none" viewBox="0 0 24 24">
+                    <circle opacity=".25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path opacity=".75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
+                </svg>
+                Cargando información del barreno…
             </div>
 
             @if($selectedBarrenoId && $barreno)
@@ -1132,120 +1140,131 @@
                     </div>
                 </div>
 
-                <div style="overflow-x: auto; padding-bottom: 1rem;">
-                    <table class="ac-grid-table">
-                        <thead>
-                            <tr>
-                                <th>Sample Number</th>
-                                <th>Sample Type</th>
-                                <th>Control Type</th>
-                                <th>From</th>
-                                <th>To</th>
-                                <th>Sample Length</th>
-                                <th>Weight</th>
-                                <th>Comments</th>
-                                <th>Validation</th>
-                                <th></th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <template x-for="(sample, index) in samples" :key="sample.id">
-                                <tr
-                                    :style="getRowError(index) ? 'background-color:#fee2e2;' : (getRowWarning(index) ? 'background-color:#fefce8;' : '')">
-                                    <!-- No. Muestra -->
-                                    <td>
-                                        <input type="text" x-model="sample.sample_number" class="ac-grid-input"
-                                            style="width: 110px;">
-                                    </td>
-                                    <!-- Tipo Muestra -->
-                                    <td>
-                                        <select x-model="sample.sample_type" class="ac-grid-input">
-                                            <option value="O">Original</option>
-                                            <option value="Control">Control</option>
-                                        </select>
-                                    </td>
-                                    <!-- Control details -->
-                                    <td style="min-width: 140px;">
-                                        <template x-if="sample.sample_type === 'Control'">
-                                            <div style="display:flex; flex-direction:column; gap:4px;">
-                                                <select x-model="sample.control_type" class="ac-grid-input">
-                                                    <option value="Standard">Standard</option>
-                                                    <option :value="blankLabel" x-text="blankLabel"></option>
-                                                    <option value="Duplicate">Duplicate</option>
-                                                </select>
-                                                <template x-if="sample.control_type === 'Standard'">
-                                                    <select x-model="sample.standard_sample_id" class="ac-grid-input">
-                                                        <option value="">Seleccione Std...</option>
-                                                        <template x-for="s in estandares" :key="s.id">
-                                                            <option :value="s.id" x-text="s.standard_name"></option>
-                                                        </template>
-                                                    </select>
-                                                </template>
-                                                <template x-if="sample.control_type === 'Duplicate'">
-                                                    <select x-model="sample.duplicate_sample_id" class="ac-grid-input">
-                                                        <option value="">Muestra...</option>
-                                                        <template x-for="m in muestrasOriginales" :key="m.id">
-                                                            <option :value="m.id" x-text="m.sample_number"></option>
-                                                        </template>
-                                                    </select>
-                                                </template>
-                                            </div>
-                                        </template>
-                                    </td>
-                                    <!-- Desde -->
-                                    <td>
-                                        <input type="number" step="0.01" x-model="sample.from_depth" class="ac-grid-input"
-                                            style="width: 70px;" :disabled="sample.sample_type === 'Control'">
-                                    </td>
-                                    <!-- Hasta -->
-                                    <td>
-                                        <input type="number" step="0.01" x-model="sample.to_depth" class="ac-grid-input"
-                                            style="width: 70px;" :disabled="sample.sample_type === 'Control'">
-                                    </td>
-                                    <!-- Recup. -->
-                                    <td>
-                                        <input type="number" step="0.01" x-model="sample.sample_length"
-                                            class="ac-grid-input" style="width: 70px;"
-                                            :disabled="sample.sample_type === 'Control'"
-                                            x-on:keydown.enter.prevent="addEmptyRow()">
-                                    </td>
-                                    <!-- Peso -->
-                                    <td>
-                                        <input type="number" step="0.01" x-model="sample.weight" class="ac-grid-input"
-                                            style="width: 70px;">
-                                    </td>
-                                    <!-- Comentarios -->
-                                    <td>
-                                        <input type="text" x-model="sample.comentarios" class="ac-grid-input"
-                                            style="width: 150px;" placeholder="Opcional">
-                                    </td>
-                                    <!-- Validación -->
-                                    <td style="text-align:center; min-width: 90px;">
-                                        <template x-if="getRowError(index)">
-                                            <span style="color:#ef4444; font-size:0.75rem; font-weight:600;"
-                                                x-text="getRowError(index)"></span>
-                                        </template>
-                                        <template x-if="!getRowError(index) && getRowWarning(index)">
-                                            <span style="color:#ca8a04; font-size:0.75rem; font-weight:600;"
-                                                x-text="getRowWarning(index)"></span>
-                                        </template>
-                                    </td>
-                                    <!-- Acciones -->
-                                    <td>
-                                        <button type="button" x-on:click="removeRow(index)" class="ac-btn-icon"
-                                            title="Eliminar">
-                                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
-                                                stroke-width="1.5" stroke="currentColor"
-                                                style="width:1.2rem; height:1.2rem;">
-                                                <path stroke-linecap="round" stroke-linejoin="round"
-                                                    d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
-                                            </svg>
-                                        </button>
-                                    </td>
+                <div style="padding-bottom: 1rem;">
+                    <div style="overflow-x: auto; max-height: 60vh; overflow-y: auto; border-radius: 0.5rem;">
+                        <table class="ac-grid-table">
+                            <thead>
+                                <tr>
+                                    <th>Sample Number</th>
+                                    <th>Sample Type</th>
+                                    <th>Control Type</th>
+                                    <th>From</th>
+                                    <th>To</th>
+                                    <th>Length</th>
+                                    <th>Sample Length</th>
+                                    <th>Weight</th>
+                                    <th>Comments</th>
+                                    <th>Validation</th>
+                                    <th></th>
                                 </tr>
-                            </template>
-                        </tbody>
-                    </table>
+                            </thead>
+                            <tbody>
+                                <template x-for="(sample, index) in samples" :key="sample.id">
+                                    <tr
+                                        :style="getRowError(index) ? 'background-color:#fee2e2;' : (getRowWarning(index) ? 'background-color:#fefce8;' : '')">
+                                        <!-- No. Muestra -->
+                                        <td>
+                                            <input type="text" x-model="sample.sample_number" class="ac-grid-input"
+                                                style="width: 110px;">
+                                        </td>
+                                        <!-- Tipo Muestra -->
+                                        <td>
+                                            <select x-model="sample.sample_type" class="ac-grid-input">
+                                                <option value="O">Original</option>
+                                                <option value="Control">Control</option>
+                                            </select>
+                                        </td>
+                                        <!-- Control details -->
+                                        <td style="min-width: 140px;">
+                                            <template x-if="sample.sample_type === 'Control'">
+                                                <div style="display:flex; flex-direction:column; gap:4px;">
+                                                    <select x-model="sample.control_type" class="ac-grid-input">
+                                                        <option value="Standard">Standard</option>
+                                                        <option :value="blankLabel" x-text="blankLabel"></option>
+                                                        <option value="Duplicate">Duplicate</option>
+                                                    </select>
+                                                    <template x-if="sample.control_type === 'Standard'">
+                                                        <select x-model="sample.standard_sample_id" class="ac-grid-input">
+                                                            <option value="">Seleccione Std...</option>
+                                                            <template x-for="s in estandares" :key="s.id">
+                                                                <option :value="s.id" x-text="s.standard_name"></option>
+                                                            </template>
+                                                        </select>
+                                                    </template>
+                                                    <template x-if="sample.control_type === 'Duplicate'">
+                                                        <select x-model="sample.duplicate_sample_id" class="ac-grid-input">
+                                                            <option value="">Muestra...</option>
+                                                            <template x-for="m in muestrasOriginales" :key="m.id">
+                                                                <option :value="m.id" x-text="m.sample_number"></option>
+                                                            </template>
+                                                        </select>
+                                                    </template>
+                                                </div>
+                                            </template>
+                                        </td>
+                                        <!-- Desde -->
+                                        <td>
+                                            <input type="number" step="0.01" x-model="sample.from_depth" class="ac-grid-input"
+                                                style="width: 70px;" :disabled="sample.sample_type === 'Control'">
+                                        </td>
+                                        <!-- Hasta -->
+                                        <td>
+                                            <input type="number" step="0.01" x-model="sample.to_depth" class="ac-grid-input"
+                                                style="width: 70px;" :disabled="sample.sample_type === 'Control'">
+                                        </td>
+                                        <!-- Length (Calculado, no editable) -->
+                                        <td>
+                                            <input type="text" class="ac-grid-input" style="width: 70px; text-align: center;" disabled
+                                                :value="sample.sample_type !== 'Control' && sample.from_depth !== '' && sample.to_depth !== '' && !isNaN(parseFloat(sample.to_depth) - parseFloat(sample.from_depth)) ? (Math.round((parseFloat(sample.to_depth) - parseFloat(sample.from_depth)) * 100) / 100).toFixed(2) : '—'">
+                                        </td>
+                                        <!-- Recup. -->
+                                        <td>
+                                            <input type="number" step="0.01" x-model="sample.sample_length"
+                                                class="ac-grid-input" style="width: 70px;"
+                                                :disabled="sample.sample_type === 'Control'"
+                                                x-on:keydown.enter.prevent="addEmptyRow()">
+                                        </td>
+                                        <!-- Peso -->
+                                        <td>
+                                            <input type="number" step="0.01" x-model="sample.weight" class="ac-grid-input"
+                                                style="width: 70px;">
+                                        </td>
+                                        <!-- Comentarios -->
+                                        <td>
+                                            <input type="text" x-model="sample.comentarios" list="comentarios-sugeridos"
+                                                class="ac-grid-input" style="width: 150px;" placeholder="Opcional">
+                                        </td>
+                                        <!-- Validación -->
+                                        <td style="text-align:center; min-width: 90px;">
+                                            <template x-if="getRowError(index)">
+                                                <span style="color:#ef4444; font-size:0.75rem; font-weight:600;"
+                                                    x-text="getRowError(index)"></span>
+                                            </template>
+                                            <template x-if="!getRowError(index) && getRowWarning(index)">
+                                                <span style="color:#ca8a04; font-size:0.75rem; font-weight:600;"
+                                                    x-text="getRowWarning(index)"></span>
+                                            </template>
+                                        </td>
+                                        <!-- Acciones -->
+                                        <td>
+                                            <button type="button" x-on:click="removeRow(index)" class="ac-btn-icon"
+                                                title="Eliminar">
+                                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
+                                                    stroke-width="1.5" stroke="currentColor"
+                                                    style="width:1.2rem; height:1.2rem;">
+                                                    <path stroke-linecap="round" stroke-linejoin="round"
+                                                        d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
+                                                </svg>
+                                            </button>
+                                        </td>
+                                    </tr>
+                                </template>
+                            </tbody>
+                        </table>
+                        <datalist id="comentarios-sugeridos">
+                            <option value="baja recuperacion"></option>
+                        </datalist>
+                    </div>
                     <div style="margin-top: 10px;">
                         <x-filament::button x-on:click="addEmptyRow()" color="gray" size="sm" icon="heroicon-m-plus">
                             Añadir Fila
@@ -1732,7 +1751,9 @@
 
                             let length = Math.round((td - fd) * 100) / 100;
                             if (sl > length) {
-                                return 'Recup < Longitud';
+                                return 'Real > Longitud';
+                            }else if (sl===0){
+                                return 'Sple. Length > 0';
                             }
 
                             // Validar traslapes con la base de datos
