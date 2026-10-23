@@ -162,6 +162,79 @@ class AgileCapture extends Page implements HasForms, HasTable
     }
 
     /**
+     * Calcula de manera robusta el siguiente número correlativo de muestra para un barreno.
+     * Busca la muestra con el correlativo/secuencia numérica más alto dentro del barreno,
+     * incrementa dicho número preservando prefijos y relleno con ceros a la izquierda,
+     * y garantiza que no colisione con muestras ya registradas en el proyecto.
+     */
+    protected function calculateNextSampleNumber(?int $barrenoId, ?int $proyectoId = null): string
+    {
+        if (!$barrenoId) {
+            return '';
+        }
+
+        $samples = DrillHoleSample::where('barreno_id', $barrenoId)
+            ->whereNotNull('sample_number')
+            ->where('sample_number', '!=', '')
+            ->get(['id', 'sample_number']);
+
+        if ($samples->isEmpty()) {
+            return '';
+        }
+
+        // Ordenamiento natural por el sufijo numérico más alto
+        $highestSample = $samples->sortByDesc(function ($s) {
+            $num = trim((string) $s->sample_number);
+            if (preg_match('/(\d+)$/', $num, $matches)) {
+                return (int) $matches[1];
+            }
+            return 0;
+        })->first();
+
+        if (!$highestSample) {
+            return '';
+        }
+
+        $rawNumber = trim((string) $highestSample->sample_number);
+        if ($rawNumber === '') {
+            return '';
+        }
+
+        // Incrementar respetando prefijo y ceros a la izquierda
+        if (preg_match('/^(.*?)(\d+)$/', $rawNumber, $matches)) {
+            $prefix = $matches[1];
+            $digits = $matches[2];
+            $padLen = strlen($digits);
+            $nextVal = (int) $digits + 1;
+            $candidate = $prefix . str_pad((string) $nextVal, $padLen, '0', STR_PAD_LEFT);
+        } else {
+            $candidate = $rawNumber . '1';
+        }
+
+        // Prevenir colisión si el número ya existe en el proyecto
+        if ($proyectoId) {
+            $existingProjectNumbers = DrillHoleSample::where('proyecto_id', $proyectoId)
+                ->pluck('sample_number')
+                ->map(fn($n) => trim((string) $n))
+                ->flip();
+
+            while (isset($existingProjectNumbers[$candidate])) {
+                if (preg_match('/^(.*?)(\d+)$/', $candidate, $matches)) {
+                    $prefix = $matches[1];
+                    $digits = $matches[2];
+                    $padLen = strlen($digits);
+                    $nextVal = (int) $digits + 1;
+                    $candidate = $prefix . str_pad((string) $nextVal, $padLen, '0', STR_PAD_LEFT);
+                } else {
+                    $candidate .= '1';
+                }
+            }
+        }
+
+        return $candidate;
+    }
+
+    /**
      * Carga las métricas, intervalos y estado de captura del barreno seleccionado.
      */
     protected function loadSelectedBarrenoData(): void
@@ -169,12 +242,16 @@ class AgileCapture extends Page implements HasForms, HasTable
         $this->selectedBarrenoId = $this->barreno->id;
 
         $lastSample = DrillHoleSample::where('barreno_id', $this->barreno->id)
+            ->whereNotNull('to_depth')
+            ->orderBy('to_depth', 'desc')
+            ->first() ?? DrillHoleSample::where('barreno_id', $this->barreno->id)
             ->orderBy('id', 'desc')
             ->first();
 
         $lastOriginalSample = DrillHoleSample::where('barreno_id', $this->barreno->id)
             ->where('sample_type', 'O')
-            ->orderBy('id', 'desc')
+            ->whereNotNull('to_depth')
+            ->orderBy('to_depth', 'desc')
             ->first();
 
         $existingIntervals = DrillHoleSample::where('barreno_id', $this->barreno->id)
@@ -188,11 +265,7 @@ class AgileCapture extends Page implements HasForms, HasTable
             ->pluck('sample_number')
             ->toArray();
 
-        $nextSampleNumber = '';
-        if ($lastSample && $lastSample->sample_number) {
-            $nextSampleNumber = $lastSample->sample_number;
-            $nextSampleNumber++; // Incrementa automáticamente
-        }
+        $nextSampleNumber = $this->calculateNextSampleNumber($this->barreno->id, $this->barreno->proyecto_id);
 
         // Emitimos evento para que Alpine.js reaccione e inicie el batch
         $this->dispatch('barreno-selected', [
@@ -485,12 +558,16 @@ class AgileCapture extends Page implements HasForms, HasTable
                 ->send();
 
             $lastSample = DrillHoleSample::where('barreno_id', $this->selectedBarrenoId)
+                ->whereNotNull('to_depth')
+                ->orderBy('to_depth', 'desc')
+                ->first() ?? DrillHoleSample::where('barreno_id', $this->selectedBarrenoId)
                 ->orderBy('id', 'desc')
                 ->first();
 
             $lastOriginalSample = DrillHoleSample::where('barreno_id', $this->selectedBarrenoId)
                 ->where('sample_type', 'O')
-                ->orderBy('id', 'desc')
+                ->whereNotNull('to_depth')
+                ->orderBy('to_depth', 'desc')
                 ->first();
 
             $existingIntervals = DrillHoleSample::where('barreno_id', $this->selectedBarrenoId)
@@ -505,11 +582,7 @@ class AgileCapture extends Page implements HasForms, HasTable
                 ->pluck('sample_number')
                 ->toArray();
 
-            $nextSampleNumber = '';
-            if ($lastSample && $lastSample->sample_number) {
-                $nextSampleNumber = $lastSample->sample_number;
-                $nextSampleNumber++;
-            }
+            $nextSampleNumber = $this->calculateNextSampleNumber($this->selectedBarrenoId, $proyectoId);
 
             // Reiniciar el componente alpine
             $this->dispatch('batch-saved', [

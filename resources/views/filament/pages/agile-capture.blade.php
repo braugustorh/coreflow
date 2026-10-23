@@ -1936,57 +1936,10 @@
                     },
 
                     removeRow(index) {
-                        if (this.samples.length <= 1) {
-                            this.resetSingleRow();
-                            return;
-                        }
-
                         this.samples.splice(index, 1);
                         if (this.samples.length === 0) {
                             this.addEmptyRow();
                         }
-                    },
-
-                    resetSingleRow() {
-                        let sDate = new Date().toISOString().slice(0, 10);
-                        this.samples = [{
-                            id: Date.now() + Math.random(),
-                            proyecto_id: this.defaultProyecto,
-                            sample_number: this.nextSampleNum || '',
-                            sample_type: 'O',
-                            control_type: 'Standard',
-                            standard_sample_id: '',
-                            duplicate_sample_id: '',
-                            from_depth: (this.lastToDepth !== undefined && this.lastToDepth !== null) ? this.lastToDepth : 0,
-                            to_depth: '',
-                            sample_length: '',
-                            weight: '',
-                            sampled_at: sDate,
-                            core_size: null,
-                            comentarios: '',
-                            is_cleared: true
-                        }];
-
-                        localStorage.removeItem(this.getStorageKey());
-                    },
-
-                    isRowClean(sample) {
-                        if (!sample) return true;
-                        if (sample.is_cleared) {
-                            if (sample.to_depth !== '' || sample.sample_length !== '' || sample.weight !== '' || (sample.comentarios && sample.comentarios.trim() !== '')) {
-                                sample.is_cleared = false;
-                                return false;
-                            }
-                            return true;
-                        }
-
-                        let hasTo = sample.to_depth !== '' && sample.to_depth !== null && sample.to_depth !== undefined;
-                        let hasLen = sample.sample_length !== '' && sample.sample_length !== null && sample.sample_length !== undefined;
-                        let hasWgt = sample.weight !== '' && sample.weight !== null && sample.weight !== undefined;
-                        let hasComm = sample.comentarios && sample.comentarios.trim() !== '';
-                        let hasCtrl = sample.sample_type === 'Control' && (sample.standard_sample_id || sample.duplicate_sample_id);
-
-                        return !hasTo && !hasLen && !hasWgt && !hasComm && !hasCtrl;
                     },
 
                     incrementSampleNumber(num) {
@@ -2002,12 +1955,6 @@
 
                     getRowError(index) {
                         let sample = this.samples[index];
-                        if (!sample) return null;
-
-                        // Si solo queda un registro y está limpio/vaciado, no mostrar errores ni fondo rojo
-                        if (this.samples.length === 1 && this.isRowClean(sample)) {
-                            return null;
-                        }
 
                         // 1. Validar campos obligatorios generales
                         if (!sample.sample_number || sample.sample_number.trim() === '') {
@@ -2105,8 +2052,6 @@
 
                     getRowWarning(index) {
                         let sample = this.samples[index];
-                        if (!sample) return null;
-                        if (this.samples.length === 1 && this.isRowClean(sample)) return null;
                         if (sample.sample_type === 'Control') return null;
 
                         let fd = parseFloat(sample.from_depth);
@@ -2132,8 +2077,6 @@
                     },
 
                     hasErrors() {
-                        if (this.samples.length === 0) return true;
-                        if (this.samples.length === 1 && this.isRowClean(this.samples[0])) return true;
                         for (let i = 0; i < this.samples.length; i++) {
                             if (this.getRowError(i)) return true;
                         }
