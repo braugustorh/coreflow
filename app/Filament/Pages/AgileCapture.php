@@ -1673,15 +1673,15 @@ class AgileCapture extends Page implements HasForms, HasTable
 
     public static function renderValidationLiveStatusHtml(array $eval): HtmlString
     {
-        $html = '<div class="space-y-2">';
+        $html = '<div class="ac-modal-status-container" style="display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 0.75rem;">';
 
         if (!empty($eval['errors'])) {
-            $html .= '<div class="p-3 bg-red-50 dark:bg-red-950/40 border border-red-300 dark:border-red-800 rounded-lg">';
-            $html .= '<div class="flex items-center gap-2 font-semibold text-red-700 dark:text-red-400 text-xs uppercase tracking-wide">';
-            $html .= '<svg class="w-4 h-4 shrink-0 text-red-600 dark:text-red-400" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/></svg>';
+            $html .= '<div class="ac-modal-status-box status-error" style="padding: 0.75rem; border-radius: 0.5rem; background-color: #fef2f2; border: 1px solid #fca5a5; color: #991b1b;">';
+            $html .= '<div class="ac-modal-status-header" style="display: flex; align-items: center; gap: 0.5rem; font-weight: 700; text-transform: uppercase; font-size: 0.75rem; letter-spacing: 0.025em; color: #b91c1c;">';
+            $html .= '<svg width="16" height="16" viewBox="0 0 20 20" fill="currentColor" style="width: 16px; height: 16px; min-width: 16px; min-height: 16px; max-width: 16px; max-height: 16px; flex-shrink: 0; color: #dc2626;"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/></svg>';
             $html .= '<span>Errores detectados (Bloquean guardado)</span>';
             $html .= '</div>';
-            $html .= '<ul class="mt-1.5 list-disc list-inside text-xs text-red-600 dark:text-red-300 space-y-0.5">';
+            $html .= '<ul class="ac-modal-status-list" style="margin-top: 0.375rem; margin-bottom: 0; padding-left: 1.25rem; list-style-type: disc; font-size: 0.75rem; color: #dc2626;">';
             foreach ($eval['errors'] as $err) {
                 $html .= '<li>' . e($err) . '</li>';
             }
@@ -1690,12 +1690,12 @@ class AgileCapture extends Page implements HasForms, HasTable
         }
 
         if (!empty($eval['warnings'])) {
-            $html .= '<div class="p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 rounded-lg">';
-            $html .= '<div class="flex items-center gap-2 font-semibold text-amber-700 dark:text-amber-400 text-xs uppercase tracking-wide">';
-            $html .= '<svg class="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>';
+            $html .= '<div class="ac-modal-status-box status-warning" style="padding: 0.75rem; border-radius: 0.5rem; background-color: #fffbeb; border: 1px solid #fcd34d; color: #92400e;">';
+            $html .= '<div class="ac-modal-status-header" style="display: flex; align-items: center; gap: 0.5rem; font-weight: 700; text-transform: uppercase; font-size: 0.75rem; letter-spacing: 0.025em; color: #b45309;">';
+            $html .= '<svg width="16" height="16" viewBox="0 0 20 20" fill="currentColor" style="width: 16px; height: 16px; min-width: 16px; min-height: 16px; max-width: 16px; max-height: 16px; flex-shrink: 0; color: #d97706;"><path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>';
             $html .= '<span>Avisos de Continuidad y GAP</span>';
             $html .= '</div>';
-            $html .= '<ul class="mt-1.5 list-disc list-inside text-xs text-amber-700 dark:text-amber-300 space-y-0.5">';
+            $html .= '<ul class="ac-modal-status-list" style="margin-top: 0.375rem; margin-bottom: 0; padding-left: 1.25rem; list-style-type: disc; font-size: 0.75rem; color: #b45309;">';
             foreach ($eval['warnings'] as $warn) {
                 $html .= '<li>' . e($warn) . '</li>';
             }
@@ -1704,9 +1704,9 @@ class AgileCapture extends Page implements HasForms, HasTable
         }
 
         if (empty($eval['errors']) && empty($eval['warnings']) && !empty($eval['info'])) {
-            $html .= '<div class="p-3 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-800 rounded-lg">';
-            $html .= '<div class="flex items-center gap-2 font-semibold text-emerald-700 dark:text-emerald-400 text-xs">';
-            $html .= '<svg class="w-4 h-4 shrink-0 text-emerald-600 dark:text-emerald-400" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>';
+            $html .= '<div class="ac-modal-status-box status-success" style="padding: 0.625rem 0.75rem; border-radius: 0.5rem; background-color: #ecfdf5; border: 1px solid #a7f3d0; color: #065f46;">';
+            $html .= '<div class="ac-modal-status-header" style="display: flex; align-items: center; gap: 0.5rem; font-weight: 600; font-size: 0.75rem; color: #047857;">';
+            $html .= '<svg width="16" height="16" viewBox="0 0 20 20" fill="currentColor" style="width: 16px; height: 16px; min-width: 16px; min-height: 16px; max-width: 16px; max-height: 16px; flex-shrink: 0; color: #059669;"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>';
             $html .= '<span>' . e(implode(' ', $eval['info'])) . '</span>';
             $html .= '</div>';
             $html .= '</div>';
@@ -1732,38 +1732,39 @@ class AgileCapture extends Page implements HasForms, HasTable
 
         $isControl = $record->sample_type === 'Control';
         $typeLabel = $isControl ? 'Control QA/QC' : 'Original';
-        $badgeClass = $isControl
-            ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300 border border-amber-300 dark:border-amber-700'
-            : 'bg-primary-100 text-primary-800 dark:bg-primary-900/40 dark:text-primary-300 border border-primary-300 dark:border-primary-700';
+        $badgeClass = $isControl ? 'ac-badge-control' : 'ac-badge-original';
+        $badgeInlineStyle = $isControl
+            ? 'background-color: #fef3c7; color: #92400e; border: 1px solid #fde68a;'
+            : 'background-color: #e0e7ff; color: #3730a3; border: 1px solid #c7d2fe;';
 
         $prevButton = $prevSample
-            ? '<button type="button" wire:click="navigateEditSample(\'' . $prevSample->id . '\')" class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md shadow-sm bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 transition focus:outline-none focus:ring-2 focus:ring-primary-500 cursor-pointer">
-                <svg class="w-4 h-4 text-gray-500 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+            ? '<button type="button" wire:click="navigateEditSample(\'' . $prevSample->id . '\')" class="ac-modal-nav-btn" style="display: inline-flex; align-items: center; gap: 0.375rem; padding: 0.375rem 0.75rem; font-size: 0.75rem; font-weight: 600; border-radius: 0.375rem; background-color: #ffffff; color: #374151; border: 1px solid #d1d5db; cursor: pointer; text-decoration: none; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 14px; height: 14px; min-width: 14px; min-height: 14px; max-width: 14px; max-height: 14px; flex-shrink: 0; color: #6b7280;"><path d="M15 19l-7-7 7-7"/></svg>
                 <span>Anterior (' . e($prevSample->sample_number) . ')</span>
                </button>'
-            : '<span class="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded-md text-gray-400 dark:text-gray-500 bg-gray-100 dark:bg-gray-800/40 border border-transparent cursor-not-allowed">
+            : '<span class="ac-modal-nav-disabled" style="display: inline-flex; align-items: center; gap: 0.25rem; padding: 0.375rem 0.75rem; font-size: 0.75rem; font-weight: 500; border-radius: 0.375rem; color: #9ca3af; background-color: #f3f4f6; border: 1px solid transparent; cursor: not-allowed;">
                 <span>← Primer muestra</span>
                </span>';
 
         $nextButton = $nextSample
-            ? '<button type="button" wire:click="navigateEditSample(\'' . $nextSample->id . '\')" class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md shadow-sm bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 transition focus:outline-none focus:ring-2 focus:ring-primary-500 cursor-pointer">
+            ? '<button type="button" wire:click="navigateEditSample(\'' . $nextSample->id . '\')" class="ac-modal-nav-btn" style="display: inline-flex; align-items: center; gap: 0.375rem; padding: 0.375rem 0.75rem; font-size: 0.75rem; font-weight: 600; border-radius: 0.375rem; background-color: #ffffff; color: #374151; border: 1px solid #d1d5db; cursor: pointer; text-decoration: none; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
                 <span>Siguiente (' . e($nextSample->sample_number) . ')</span>
-                <svg class="w-4 h-4 text-gray-500 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 14px; height: 14px; min-width: 14px; min-height: 14px; max-width: 14px; max-height: 14px; flex-shrink: 0; color: #6b7280;"><path d="M9 5l7 7-7 7"/></svg>
                </button>'
-            : '<span class="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded-md text-gray-400 dark:text-gray-500 bg-gray-100 dark:bg-gray-800/40 border border-transparent cursor-not-allowed">
+            : '<span class="ac-modal-nav-disabled" style="display: inline-flex; align-items: center; gap: 0.25rem; padding: 0.375rem 0.75rem; font-size: 0.75rem; font-weight: 500; border-radius: 0.375rem; color: #9ca3af; background-color: #f3f4f6; border: 1px solid transparent; cursor: not-allowed;">
                 <span>Última muestra →</span>
                </span>';
 
         $html = '
-        <div class="flex items-center justify-between p-2.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50/80 dark:bg-gray-800/50 mb-3 shadow-xs">
+        <div class="ac-modal-nav-container" style="display: flex; align-items: center; justify-content: space-between; padding: 0.625rem 0.875rem; border-radius: 0.5rem; border: 1px solid #e2e8f0; background-color: rgba(248, 250, 252, 0.95); margin-bottom: 0.75rem; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);">
             <div>' . $prevButton . '</div>
-            <div class="text-center px-2">
-                <div class="text-[11px] font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+            <div class="ac-modal-sample-center" style="text-align: center; padding: 0 0.5rem;">
+                <div class="ac-modal-sample-counter" style="font-size: 0.6875rem; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em;">
                     Muestra ' . $currentIndexDisplay . ' de ' . $total . '
                 </div>
-                <div class="font-bold text-sm text-gray-800 dark:text-gray-100 flex items-center justify-center gap-2 mt-0.5">
-                    <span>' . e($record->sample_number) . '</span>
-                    <span class="px-2 py-0.5 text-[11px] font-medium rounded-full ' . $badgeClass . '">' . $typeLabel . '</span>
+                <div class="ac-modal-sample-details" style="display: flex; align-items: center; justify-content: center; gap: 0.5rem; margin-top: 0.125rem;">
+                    <span class="ac-modal-sample-num" style="font-weight: 700; font-size: 0.9375rem; color: #1e293b;">#' . e($record->sample_number) . '</span>
+                    <span class="ac-modal-sample-badge ' . $badgeClass . '" style="display: inline-block; padding: 0.125rem 0.5rem; font-size: 0.6875rem; font-weight: 600; border-radius: 9999px; ' . $badgeInlineStyle . '">' . $typeLabel . '</span>
                 </div>
             </div>
             <div>' . $nextButton . '</div>

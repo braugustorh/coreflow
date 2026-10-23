@@ -860,6 +860,274 @@
             border-color: rgba(239, 68, 68, 0.4);
             color: #f87171;
         }
+
+        /* ===== Modal Edit Navigation & Validation Status (Safe Standalone Styles) ===== */
+        .ac-modal-nav-container {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0.625rem 0.875rem;
+            border-radius: 0.5rem;
+            border: 1px solid #e2e8f0;
+            background-color: rgba(248, 250, 252, 0.95);
+            margin-bottom: 0.875rem;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+        }
+
+        .ac-modal-nav-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.375rem;
+            padding: 0.375rem 0.75rem;
+            font-size: 0.75rem;
+            font-weight: 600;
+            border-radius: 0.375rem;
+            background-color: #ffffff;
+            color: #374151;
+            border: 1px solid #d1d5db;
+            cursor: pointer;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+            text-decoration: none;
+            transition: background-color 0.15s, border-color 0.15s;
+        }
+
+        .ac-modal-nav-btn:hover {
+            background-color: #f9fafb;
+            border-color: #9ca3af;
+        }
+
+        .ac-modal-nav-btn svg {
+            width: 14px !important;
+            height: 14px !important;
+            min-width: 14px !important;
+            min-height: 14px !important;
+            max-width: 14px !important;
+            max-height: 14px !important;
+            flex-shrink: 0;
+            color: #6b7280;
+        }
+
+        .ac-modal-nav-disabled {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.25rem;
+            padding: 0.375rem 0.75rem;
+            font-size: 0.75rem;
+            font-weight: 500;
+            border-radius: 0.375rem;
+            color: #9ca3af;
+            background-color: #f3f4f6;
+            border: 1px solid transparent;
+            cursor: not-allowed;
+        }
+
+        .ac-modal-sample-center {
+            text-align: center;
+            padding: 0 0.5rem;
+        }
+
+        .ac-modal-sample-counter {
+            font-size: 0.6875rem;
+            font-weight: 600;
+            color: #64748b;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .ac-modal-sample-details {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            margin-top: 0.125rem;
+        }
+
+        .ac-modal-sample-num {
+            font-weight: 700;
+            font-size: 0.9375rem;
+            color: #1e293b;
+        }
+
+        .ac-modal-sample-badge {
+            display: inline-block;
+            padding: 0.125rem 0.5rem;
+            font-size: 0.6875rem;
+            font-weight: 600;
+            border-radius: 9999px;
+        }
+
+        .ac-badge-original {
+            background-color: #e0e7ff;
+            color: #3730a3;
+            border: 1px solid #c7d2fe;
+        }
+
+        .ac-badge-control {
+            background-color: #fef3c7;
+            color: #92400e;
+            border: 1px solid #fde68a;
+        }
+
+        /* Modal Live Status Boxes */
+        .ac-modal-status-container {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            margin-bottom: 0.875rem;
+        }
+
+        .ac-modal-status-box {
+            padding: 0.75rem;
+            border-radius: 0.5rem;
+            font-size: 0.75rem;
+        }
+
+        .ac-modal-status-box.status-error {
+            background-color: #fef2f2;
+            border: 1px solid #fca5a5;
+            color: #991b1b;
+        }
+
+        .ac-modal-status-box.status-warning {
+            background-color: #fffbeb;
+            border: 1px solid #fcd34d;
+            color: #92400e;
+        }
+
+        .ac-modal-status-box.status-success {
+            background-color: #ecfdf5;
+            border: 1px solid #a7f3d0;
+            color: #065f46;
+        }
+
+        .ac-modal-status-header {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.025em;
+        }
+
+        .ac-modal-status-box svg {
+            width: 16px !important;
+            height: 16px !important;
+            min-width: 16px !important;
+            min-height: 16px !important;
+            max-width: 16px !important;
+            max-height: 16px !important;
+            flex-shrink: 0;
+        }
+
+        .status-error .ac-modal-status-header,
+        .status-error svg {
+            color: #b91c1c;
+        }
+
+        .status-warning .ac-modal-status-header,
+        .status-warning svg {
+            color: #b45309;
+        }
+
+        .status-success .ac-modal-status-header,
+        .status-success svg {
+            color: #047857;
+        }
+
+        .ac-modal-status-list {
+            margin-top: 0.375rem;
+            margin-bottom: 0;
+            padding-left: 1.25rem;
+            list-style-type: disc;
+            font-size: 0.75rem;
+        }
+
+        .status-error .ac-modal-status-list {
+            color: #dc2626;
+        }
+
+        .status-warning .ac-modal-status-list {
+            color: #b45309;
+        }
+
+        /* Dark Mode overrides for modal */
+        .dark .ac-modal-nav-container {
+            background-color: rgba(30, 41, 59, 0.7);
+            border-color: rgba(51, 65, 85, 0.8);
+        }
+
+        .dark .ac-modal-nav-btn {
+            background-color: #1e293b;
+            color: #e2e8f0;
+            border-color: #475569;
+        }
+
+        .dark .ac-modal-nav-btn:hover {
+            background-color: #334155;
+            border-color: #64748b;
+        }
+
+        .dark .ac-modal-nav-btn svg {
+            color: #94a3b8;
+        }
+
+        .dark .ac-modal-nav-disabled {
+            background-color: rgba(30, 41, 59, 0.4);
+            color: #64748b;
+        }
+
+        .dark .ac-modal-sample-counter {
+            color: #94a3b8;
+        }
+
+        .dark .ac-modal-sample-num {
+            color: #f8fafc;
+        }
+
+        .dark .ac-badge-original {
+            background-color: rgba(67, 56, 202, 0.3);
+            color: #a5b4fc;
+            border-color: rgba(99, 102, 241, 0.4);
+        }
+
+        .dark .ac-badge-control {
+            background-color: rgba(146, 64, 14, 0.3);
+            color: #fde68a;
+            border-color: rgba(217, 119, 6, 0.4);
+        }
+
+        .dark .status-error {
+            background-color: rgba(69, 10, 10, 0.4);
+            border-color: rgba(153, 27, 27, 0.6);
+            color: #fca5a5;
+        }
+
+        .dark .status-warning {
+            background-color: rgba(69, 26, 3, 0.4);
+            border-color: rgba(180, 83, 9, 0.6);
+            color: #fde68a;
+        }
+
+        .dark .status-success {
+            background-color: rgba(6, 78, 59, 0.4);
+            border-color: rgba(5, 150, 105, 0.6);
+            color: #6ee7b7;
+        }
+
+        .dark .status-error .ac-modal-status-header,
+        .dark .status-error svg {
+            color: #f87171;
+        }
+
+        .dark .status-warning .ac-modal-status-header,
+        .dark .status-warning svg {
+            color: #fbbf24;
+        }
+
+        .dark .status-success .ac-modal-status-header,
+        .dark .status-success svg {
+            color: #34d399;
+        }
     </style>
 @endpush
 
