@@ -6,6 +6,7 @@ use App\Filament\Resources\DrillHoleSampleResource\Pages;
 use App\Models\DrillHoleSample;
 use App\Models\StandardSample;
 use App\Models\WorkOrder;
+use App\Services\SampleExportService;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Schemas\Components\Utilities\Get;
@@ -402,6 +403,15 @@ class DrillHoleSampleResource extends Resource
             ])
             ->bulkActions([
                 BulkActionGroup::make([
+                    \Filament\Actions\BulkAction::make('exportExcel')
+                        ->label('Exportar a Excel')
+                        ->icon('heroicon-o-arrow-down-tray')
+                        ->color('success')
+                        ->action(function (\Illuminate\Support\Collection $records, SampleExportService $service) {
+                            return $service->exportToExcel($records);
+                        })
+                        ->deselectRecordsAfterCompletion(),
+
                     \Filament\Actions\BulkAction::make('assignWorkOrder')
                         ->label('Asignar Work Order')
                         ->icon('heroicon-o-briefcase')

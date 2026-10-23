@@ -7,6 +7,7 @@ use App\Models\DrillHole;
 use App\Models\DrillHoleSample;
 use App\Models\StandardSample;
 use App\Models\WorkOrder;
+use App\Services\SampleExportService;
 use App\Services\SampleValidationService;
 use Filament\Actions;
 use Filament\Forms;
@@ -525,6 +526,15 @@ class ReviewDrillHoleSamples extends Page implements HasForms, HasTable
             ])
             ->bulkActions([
                 BulkActionGroup::make([
+                    BulkAction::make('export_excel')
+                        ->label('Exportar a Excel')
+                        ->icon('heroicon-o-arrow-down-tray')
+                        ->color('success')
+                        ->action(function (Collection $records, SampleExportService $service) {
+                            return $service->exportToExcel($records, $this->drillHole?->nombre_barreno);
+                        })
+                        ->deselectRecordsAfterCompletion(),
+
                     BulkAction::make('assign_work_order')
                         ->label('Asignar Work Order')
                         ->icon('heroicon-o-briefcase')
