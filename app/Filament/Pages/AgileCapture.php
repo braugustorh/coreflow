@@ -3,17 +3,20 @@
 namespace App\Filament\Pages;
 
 use App\Models\DrillHole;
+use App\Models\DrillHoleGapValidation;
 use App\Models\DrillHoleSample;
 use App\Models\Proyecto;
+use App\Models\SampleSetting;
 use App\Models\Sede;
 use App\Models\StandardSample;
 use App\Models\WorkOrder;
+use App\Services\SampleValidationService;
 use Filament\Actions\BulkAction;
 use Filament\Actions\Action as TableAction;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\EditAction;
-use Filament\Schemas\Components\Grid;
 use Filament\Forms\Components\DateTimePicker;
+use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
@@ -23,7 +26,10 @@ use Filament\Forms\Contracts\HasForms;
 use Filament\Forms\Form;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
+use Filament\Schemas\Components\Grid;
+use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
+use Filament\Schemas\Components\Utilities\Set;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Columns\TextInputColumn;
 use Filament\Tables\Concerns\InteractsWithTable;
@@ -32,6 +38,7 @@ use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
+use Illuminate\Support\HtmlString;
 use Illuminate\Support\Str;
 use Livewire\Attributes\On;
 use App\Filament\Actions\QcPhotosAction;
@@ -524,6 +531,8 @@ class AgileCapture extends Page implements HasForms, HasTable
                     ->where('barreno_id', $this->selectedBarrenoId ?? -1)
                     ->orderBy('sample_number', 'asc')
             )
+            ->defaultPaginationPageOption(25)
+            ->paginationPageOptions([10, 25, 75, 100])
             ->columns([
                 TextColumn::make('sample_number')
                     ->label('Sample Number')
@@ -628,7 +637,11 @@ class AgileCapture extends Page implements HasForms, HasTable
                 EditAction::make()
                     ->label('Editar')
                     ->icon('heroicon-o-pencil-square')
-                    ->modalHeading(fn (DrillHoleSample $record) => "Editar Muestra {$record->sample_number}")
+                    ->modalHeading(fn (DrillHoleSample $record) => "Editar Muestra #{$record->sample_number}")
+                    ->modalDescription(fn (DrillHoleSample $record) => "Barreno: " . ($record->barreno?->nombre_barreno ?? 'N/A') . " | Proyecto: " . ($record->proyecto?->nombre ?? 'N/A'))
+                    ->modalSubmitActionLabel('Guardar Cambios')
+                    ->modalCancelActionLabel('Cerrar')
+                    ->modalWidth('3xl')
                     ->slideOver()
                     ->disabled(fn (DrillHoleSample $record): bool => $record->isSent())
                     ->tooltip(fn (DrillHoleSample $record): ?string => $record->isSent()
@@ -636,39 +649,265 @@ class AgileCapture extends Page implements HasForms, HasTable
                         : null
                     )
                     ->form([
-                        Grid::make(2)->schema([
-                            TextInput::make('from_depth')
-                                ->label('Desde (FROM)')
-                                ->numeric()
-                                ->step(0.01)
-                                ->disabled(fn (DrillHoleSample $record) => $record->sample_type === 'Control'),
-                            TextInput::make('to_depth')
-                                ->label('Hasta (TO)')
-                                ->numeric()
-                                ->step(0.01)
-                                ->disabled(fn (DrillHoleSample $record) => $record->sample_type === 'Control'),
-                            TextInput::make('sample_length')
-                                ->label('Recuperación (Sample Length)')
-                                ->numeric()
-                                ->step(0.01)
-                                ->disabled(fn (DrillHoleSample $record) => $record->sample_type === 'Control'),
-                            TextInput::make('weight')
-                                ->label('Peso (kg)')
-                                ->numeric()
-                                ->step(0.01),
-                            Select::make('core_size')
-                                ->label('Core Size')
-                                ->options([
-                                    'PQ' => 'PQ (85.0 mm)',
-                                    'HQ' => 'HQ (63.5 mm)',
-                                    'NQ' => 'NQ (47.6 mm)',
-                                    'BQ' => 'BQ (36.4 mm)',
+                        Placeholder::make('navigation_header')
+                            ->hiddenLabel()
+                            ->content(fn (?DrillHoleSample $record) => $record ? static::renderNavigationHeaderHtml($record) : null),
+
+                        Placeholder::make('validation_live_status')
+                            ->hiddenLabel()
+                            ->content(function (Get $get, ?DrillHoleSample $record) {
+                                if (!$record) return null;
+                                $eval = static::evaluateSampleInterval(
+                                    $record,
+                                    $get('from_depth'),
+                                    $get('to_depth'),
+                                    $get('sample_length'),
+                                    $get('weight')
+                                );
+                                return static::renderValidationLiveStatusHtml($eval);
+                            }),
+
+                        Section::make('Intervalo de Perforación')
+                            ->description('Definición de tramos y recuperación real')
+                            ->icon('heroicon-o-arrows-up-down')
+                            ->schema([
+                                Grid::make(3)->schema([
+                                    TextInput::make('from_depth')
+                                        ->label('Desde (FROM)')
+                                        ->numeric()
+                                        ->step(0.01)
+                                        ->required(fn (?DrillHoleSample $record) => $record?->sample_type !== 'Control')
+                                        ->disabled(fn (?DrillHoleSample $record) => $record?->sample_type === 'Control')
+                                        ->live(onBlur: true)
+                                        ->afterStateUpdated(function (Get $get, Set $set, ?string $state) {
+                                            $from = is_numeric($state) ? (float) $state : null;
+                                            $to = is_numeric($get('to_depth')) ? (float) $get('to_depth') : null;
+                                            if ($from !== null && $to !== null && $to > $from) {
+                                                $set('length', round($to - $from, 2));
+                                            }
+                                        })
+                                        ->rules([
+                                            fn (Get $get, ?DrillHoleSample $record) => function (string $attribute, $value, \Closure $fail) use ($get, $record) {
+                                                if (!$record || $record->sample_type === 'Control' || !is_numeric($value)) return;
+                                                $from = (float) $value;
+                                                $to = is_numeric($get('to_depth')) ? (float) $get('to_depth') : null;
+                                                if ($from < 0) {
+                                                    $fail("La profundidad 'Desde' ({$from} m) no puede ser negativa.");
+                                                    return;
+                                                }
+                                                if ($to !== null && $from >= $to) {
+                                                    $fail("La profundidad 'Desde' ({$from} m) debe ser menor que 'Hasta' ({$to} m).");
+                                                    return;
+                                                }
+                                                if ($to !== null) {
+                                                    $overlap = DrillHoleSample::where('barreno_id', $record->barreno_id)
+                                                        ->where('id', '!=', $record->id)
+                                                        ->whereNotNull('from_depth')
+                                                        ->whereNotNull('to_depth')
+                                                        ->where('from_depth', '<', $to - 0.001)
+                                                        ->where('to_depth', '>', $from + 0.001)
+                                                        ->first();
+                                                    if ($overlap) {
+                                                        $fail("Traslape detectado con muestra #{$overlap->sample_number} ({$overlap->from_depth}m - {$overlap->to_depth}m).");
+                                                    }
+                                                }
+                                            },
+                                        ]),
+
+                                    TextInput::make('to_depth')
+                                        ->label('Hasta (TO)')
+                                        ->numeric()
+                                        ->step(0.01)
+                                        ->required(fn (?DrillHoleSample $record) => $record?->sample_type !== 'Control')
+                                        ->disabled(fn (?DrillHoleSample $record) => $record?->sample_type === 'Control')
+                                        ->live(onBlur: true)
+                                        ->afterStateUpdated(function (Get $get, Set $set, ?string $state) {
+                                            $to = is_numeric($state) ? (float) $state : null;
+                                            $from = is_numeric($get('from_depth')) ? (float) $get('from_depth') : null;
+                                            if ($from !== null && $to !== null && $to > $from) {
+                                                $set('length', round($to - $from, 2));
+                                            }
+                                        })
+                                        ->rules([
+                                            fn (Get $get, ?DrillHoleSample $record) => function (string $attribute, $value, \Closure $fail) use ($get, $record) {
+                                                if (!$record || $record->sample_type === 'Control' || !is_numeric($value)) return;
+                                                $to = (float) $value;
+                                                $from = is_numeric($get('from_depth')) ? (float) $get('from_depth') : null;
+                                                if ($from !== null && $from >= $to) {
+                                                    $fail("La profundidad 'Hasta' ({$to} m) debe ser mayor que 'Desde' ({$from} m).");
+                                                    return;
+                                                }
+                                                $barreno = $record->barreno ?: DrillHole::find($record->barreno_id);
+                                                if ($barreno?->max_depth !== null && (float)$barreno->max_depth > 0 && $to > (float)$barreno->max_depth + 0.001) {
+                                                    $fail("La profundidad 'Hasta' ({$to} m) excede la profundidad máxima del barreno ({$barreno->max_depth} m).");
+                                                    return;
+                                                }
+                                                if ($from !== null) {
+                                                    $overlap = DrillHoleSample::where('barreno_id', $record->barreno_id)
+                                                        ->where('id', '!=', $record->id)
+                                                        ->whereNotNull('from_depth')
+                                                        ->whereNotNull('to_depth')
+                                                        ->where('from_depth', '<', $to - 0.001)
+                                                        ->where('to_depth', '>', $from + 0.001)
+                                                        ->first();
+                                                    if ($overlap) {
+                                                        $fail("Traslape detectado con muestra #{$overlap->sample_number} ({$overlap->from_depth}m - {$overlap->to_depth}m).");
+                                                    }
+                                                }
+                                            },
+                                        ]),
+
+                                    TextInput::make('length')
+                                        ->label('Longitud (m)')
+                                        ->disabled()
+                                        ->dehydrated()
+                                        ->numeric()
+                                        ->step(0.01)
+                                        ->formatStateUsing(function ($state, ?DrillHoleSample $record, Get $get) {
+                                            if ($state !== null && $state !== '') return $state;
+                                            $from = (float) $get('from_depth');
+                                            $to = (float) $get('to_depth');
+                                            return ($to > $from) ? round($to - $from, 2) : ($record?->length ?? null);
+                                        })
+                                        ->helperText('Diferencia automática TO - FROM'),
                                 ]),
-                            TextInput::make('comentarios')
-                                ->label('Comentarios')
-                                ->columnSpanFull(),
-                        ]),
-                    ]),
+
+                                Grid::make(2)->schema([
+                                    TextInput::make('sample_length')
+                                        ->label('Recuperación (Sample Length) [m]')
+                                        ->numeric()
+                                        ->step(0.01)
+                                        ->disabled(fn (?DrillHoleSample $record) => $record?->sample_type === 'Control')
+                                        ->live(onBlur: true)
+                                        ->helperText('Testigo físico recuperado en metros')
+                                        ->rules([
+                                            fn (Get $get, ?DrillHoleSample $record) => function (string $attribute, $value, \Closure $fail) use ($get, $record) {
+                                                if (!$record || $record->sample_type === 'Control' || $value === null || $value === '') return;
+                                                $recup = (float) $value;
+                                                $from = is_numeric($get('from_depth')) ? (float) $get('from_depth') : null;
+                                                $to = is_numeric($get('to_depth')) ? (float) $get('to_depth') : null;
+                                                if ($from !== null && $to !== null && $to > $from) {
+                                                    $len = round($to - $from, 2);
+                                                    if ($recup > $len + 0.001) {
+                                                        $fail("La recuperación ({$recup} m) no puede ser mayor que la longitud ({$len} m).");
+                                                    }
+                                                }
+                                            },
+                                        ]),
+
+                                    Select::make('core_size')
+                                        ->label('Diámetro (Core Size)')
+                                        ->options([
+                                            'PQ' => 'PQ (85.0 mm)',
+                                            'HQ' => 'HQ (63.5 mm)',
+                                            'NQ' => 'NQ (47.6 mm)',
+                                            'BQ' => 'BQ (36.4 mm)',
+                                        ])
+                                        ->placeholder('Seleccione diámetro...'),
+                                ]),
+                            ]),
+
+                        Section::make('Propiedades Físicas y QA/QC')
+                            ->description('Parámetros de masa y controles')
+                            ->icon('heroicon-o-scale')
+                            ->schema([
+                                Grid::make(2)->schema([
+                                    TextInput::make('weight')
+                                        ->label('Peso (kg)')
+                                        ->numeric()
+                                        ->step(0.01)
+                                        ->live(onBlur: true)
+                                        ->helperText(function () {
+                                            $min = SampleSetting::getSettings()->min_sample_weight ?? 0.50;
+                                            $max = SampleSetting::getSettings()->max_sample_weight ?? 15.00;
+                                            return "Rango esperado: {$min} kg a {$max} kg";
+                                        }),
+
+                                    Select::make('control_type')
+                                        ->label('Tipo de Control')
+                                        ->options([
+                                            'Blank-ML'  => 'Blank-ML',
+                                            'Standard'  => 'Standard',
+                                            'Duplicate' => 'Duplicate',
+                                        ])
+                                        ->visible(fn (?DrillHoleSample $record) => $record?->sample_type === 'Control'),
+                                ]),
+                            ]),
+
+                        Section::make('Observaciones')
+                            ->description('Notas geológicas u operativas')
+                            ->icon('heroicon-o-document-text')
+                            ->schema([
+                                Textarea::make('comentarios')
+                                    ->label('Comentarios')
+                                    ->placeholder('Observaciones relevantes sobre la muestra o el tramo...')
+                                    ->rows(3)
+                                    ->columnSpanFull(),
+                            ]),
+                    ])
+                    ->extraModalFooterActions(function (DrillHoleSample $record, Page $livewire): array {
+                        $allIds = static::getOrderedBarrenoSampleIds($record->barreno_id);
+                        $currentIndex = array_search($record->id, $allIds);
+                        $total = count($allIds);
+                        $prevId = ($currentIndex !== false && $currentIndex > 0) ? $allIds[$currentIndex - 1] : null;
+                        $nextId = ($currentIndex !== false && $currentIndex < $total - 1) ? $allIds[$currentIndex + 1] : null;
+
+                        $actions = [];
+                        if ($prevId) {
+                            $actions[] = TableAction::make('prev_sample_footer')
+                                ->label('← Anterior')
+                                ->color('gray')
+                                ->action(fn () => $livewire->navigateEditSample($prevId));
+                        }
+                        if ($nextId) {
+                            $actions[] = TableAction::make('next_sample_footer')
+                                ->label('Siguiente →')
+                                ->color('gray')
+                                ->action(fn () => $livewire->navigateEditSample($nextId));
+                        }
+                        return $actions;
+                    })
+                    ->before(function (EditAction $action, DrillHoleSample $record, array $data) {
+                        if ($record->sample_type !== 'Control') {
+                            $from = isset($data['from_depth']) && is_numeric($data['from_depth']) ? (float)$data['from_depth'] : null;
+                            $to = isset($data['to_depth']) && is_numeric($data['to_depth']) ? (float)$data['to_depth'] : null;
+                            $recup = isset($data['sample_length']) && is_numeric($data['sample_length']) ? (float)$data['sample_length'] : null;
+                            $weight = isset($data['weight']) && is_numeric($data['weight']) ? (float)$data['weight'] : null;
+
+                            $eval = static::evaluateSampleInterval($record, $from, $to, $recup, $weight);
+
+                            if (!empty($eval['errors'])) {
+                                $msg = implode(' ', $eval['errors']);
+                                Notification::make()
+                                    ->title('No se puede guardar la muestra')
+                                    ->body($msg)
+                                    ->danger()
+                                    ->send();
+
+                                throw \Illuminate\Validation\ValidationException::withMessages([
+                                    'from_depth' => $eval['errors'][0],
+                                ]);
+                            }
+                        }
+                    })
+                    ->using(function (DrillHoleSample $record, array $data): DrillHoleSample {
+                        if ($record->sample_type !== 'Control' && isset($data['from_depth'], $data['to_depth']) && is_numeric($data['from_depth']) && is_numeric($data['to_depth'])) {
+                            $data['length'] = round((float)$data['to_depth'] - (float)$data['from_depth'], 2);
+                        }
+                        $record->update($data);
+                        return $record;
+                    })
+                    ->after(function (DrillHoleSample $record, Page $livewire) {
+                        app(SampleValidationService::class)->validateDraftsForBarreno($record->barreno_id);
+                        if (method_exists($livewire, 'flushCachedTableRecords')) {
+                            $livewire->flushCachedTableRecords();
+                        }
+                        Notification::make()
+                            ->title("Muestra {$record->sample_number} actualizada")
+                            ->body("Datos guardados y validaciones de perforación sincronizadas con éxito.")
+                            ->success()
+                            ->send();
+                    }),
                 DeleteAction::make()
                     ->label('Eliminar')
                     ->disabled(fn (DrillHoleSample $record): bool => $record->isSent())
@@ -1265,5 +1504,271 @@ class AgileCapture extends Page implements HasForms, HasTable
     {
         $this->cachedBarrenoMetrics = null;
         $this->flushCachedTableRecords();
+    }
+
+    public function navigateEditSample(int|string $targetSampleId): void
+    {
+        $this->replaceMountedAction('edit', context: [
+            'table' => true,
+            'recordKey' => (string) $targetSampleId,
+        ]);
+    }
+
+    public static function getOrderedBarrenoSampleIds(int $barrenoId): array
+    {
+        return DrillHoleSample::where('barreno_id', $barrenoId)
+            ->orderByRaw('CASE WHEN from_depth IS NULL THEN 1 ELSE 0 END, from_depth ASC, id ASC')
+            ->pluck('id')
+            ->toArray();
+    }
+
+    public static function evaluateSampleInterval(
+        DrillHoleSample $record,
+        mixed $fromVal,
+        mixed $toVal,
+        mixed $recupVal = null,
+        mixed $weightVal = null
+    ): array {
+        $result = [
+            'is_valid' => true,
+            'length' => 0.0,
+            'errors' => [],
+            'warnings' => [],
+            'info' => [],
+            'prev_sample' => null,
+            'next_sample' => null,
+        ];
+
+        if ($record->sample_type === 'Control') {
+            $result['info'][] = 'Muestra de Control QA/QC (no requiere intervalos de perforación).';
+            return $result;
+        }
+
+        $from = is_numeric($fromVal) ? (float) $fromVal : null;
+        $to = is_numeric($toVal) ? (float) $toVal : null;
+        $recup = is_numeric($recupVal) ? (float) $recupVal : null;
+        $weight = is_numeric($weightVal) ? (float) $weightVal : null;
+
+        if ($from === null || $to === null) {
+            $result['errors'][] = 'Los campos Desde (FROM) y Hasta (TO) son obligatorios.';
+            $result['is_valid'] = false;
+            return $result;
+        }
+
+        if ($from < 0) {
+            $result['errors'][] = "La profundidad 'Desde' ({$from} m) no puede ser negativa.";
+        }
+
+        if ($from >= $to) {
+            $result['errors'][] = "La profundidad 'Desde' ({$from} m) debe ser estrictamente menor que 'Hasta' ({$to} m).";
+        }
+
+        $length = round($to - $from, 2);
+        $result['length'] = $length;
+
+        if ($length > 0 && $recup !== null && $recup > $length + 0.001) {
+            $result['errors'][] = "La recuperación ({$recup} m) no puede exceder la longitud del tramo ({$length} m).";
+        }
+
+        $barreno = $record->barreno ?: DrillHole::find($record->barreno_id);
+        $startDepth = (float) ($barreno?->start_depth ?? 0.0);
+
+        if ($from < $startDepth - 0.001) {
+            $result['errors'][] = "La profundidad 'Desde' ({$from} m) es menor a la profundidad inicial del barreno ({$startDepth} m).";
+        }
+
+        if ($barreno?->max_depth !== null && (float)$barreno->max_depth > 0 && $to > (float)$barreno->max_depth + 0.001) {
+            $result['errors'][] = "La profundidad 'Hasta' ({$to} m) excede la profundidad máxima del barreno ({$barreno->max_depth} m).";
+        }
+
+        // Obtener otras muestras del barreno con from/to definidos
+        $otherOriginals = DrillHoleSample::where('barreno_id', $record->barreno_id)
+            ->where('id', '!=', $record->id)
+            ->whereNotNull('from_depth')
+            ->whereNotNull('to_depth')
+            ->orderBy('from_depth')
+            ->get();
+
+        // 1. Detectar traslapes
+        $overlapping = $otherOriginals->filter(function ($other) use ($from, $to) {
+            $oFrom = (float) $other->from_depth;
+            $oTo = (float) $other->to_depth;
+            return ($from < $oTo - 0.001) && ($to > $oFrom + 0.001);
+        });
+
+        foreach ($overlapping as $overlap) {
+            $result['errors'][] = "Traslape con muestra #{$overlap->sample_number} ({$overlap->from_depth}m - {$overlap->to_depth}m).";
+        }
+
+        // 2. Detectar GAPs
+        // Muestra anterior
+        $prevSample = $otherOriginals->filter(fn($o) => (float)$o->to_depth <= $from + 0.001)->sortByDesc('to_depth')->first();
+        $result['prev_sample'] = $prevSample;
+
+        $gapValidations = DrillHoleGapValidation::where('barreno_id', $record->barreno_id)->get();
+
+        if ($prevSample) {
+            $gapBefore = round($from - (float)$prevSample->to_depth, 3);
+            if ($gapBefore > 0.011) {
+                $isValidated = $gapValidations->contains(function ($gv) use ($prevSample, $from) {
+                    return ((float)$gv->from_depth <= (float)$prevSample->to_depth + 0.01) &&
+                           ((float)$gv->to_depth >= $from - 0.01);
+                });
+                if (!$isValidated) {
+                    $result['warnings'][] = "GAP de {$gapBefore} m detectado entre muestra anterior #{$prevSample->sample_number} ({$prevSample->to_depth}m) y este tramo ({$from}m) sin validar.";
+                }
+            }
+        } else {
+            // Es la primer muestra: verificar GAP inicial
+            $gapInitial = round($from - $startDepth, 3);
+            if ($gapInitial > 0.011) {
+                $isValidated = $gapValidations->contains(function ($gv) use ($startDepth, $from) {
+                    return ((float)$gv->from_depth <= $startDepth + 0.01) &&
+                           ((float)$gv->to_depth >= $from - 0.01);
+                });
+                if (!$isValidated) {
+                    $result['warnings'][] = "GAP inicial de {$gapInitial} m desde inicio ({$startDepth}m) hasta {$from}m sin validar.";
+                }
+            }
+        }
+
+        // Muestra posterior
+        $nextSample = $otherOriginals->filter(fn($o) => (float)$o->from_depth >= $to - 0.001)->sortBy('from_depth')->first();
+        $result['next_sample'] = $nextSample;
+
+        if ($nextSample) {
+            $gapAfter = round((float)$nextSample->from_depth - $to, 3);
+            if ($gapAfter > 0.011) {
+                $isValidatedNext = $gapValidations->contains(function ($gv) use ($to, $nextSample) {
+                    return ((float)$gv->from_depth <= $to + 0.01) &&
+                           ((float)$gv->to_depth >= (float)$nextSample->from_depth - 0.01);
+                });
+                if (!$isValidatedNext) {
+                    $result['warnings'][] = "GAP de {$gapAfter} m detectado entre este tramo ({$to}m) y la siguiente muestra #{$nextSample->sample_number} ({$nextSample->from_depth}m) sin validar.";
+                }
+            }
+        }
+
+        // 3. Validación de peso
+        if ($weight !== null && $weight > 0) {
+            $settings = SampleSetting::getSettings();
+            $minWeight = (float) ($settings->min_sample_weight ?? 0.50);
+            $maxWeight = (float) ($settings->max_sample_weight ?? 15.00);
+
+            if ($weight < $minWeight) {
+                $result['warnings'][] = "El peso ({$weight} kg) es inferior al mínimo recomendado ({$minWeight} kg).";
+            } elseif ($weight > $maxWeight) {
+                $result['warnings'][] = "El peso ({$weight} kg) supera el máximo recomendado ({$maxWeight} kg).";
+            }
+        }
+
+        if (!empty($result['errors'])) {
+            $result['is_valid'] = false;
+        } elseif (empty($result['warnings'])) {
+            $result['info'][] = "✓ Intervalo continuo y coherente ({$length} m). Sin traslapes detectados.";
+        }
+
+        return $result;
+    }
+
+    public static function renderValidationLiveStatusHtml(array $eval): HtmlString
+    {
+        $html = '<div class="space-y-2">';
+
+        if (!empty($eval['errors'])) {
+            $html .= '<div class="p-3 bg-red-50 dark:bg-red-950/40 border border-red-300 dark:border-red-800 rounded-lg">';
+            $html .= '<div class="flex items-center gap-2 font-semibold text-red-700 dark:text-red-400 text-xs uppercase tracking-wide">';
+            $html .= '<svg class="w-4 h-4 shrink-0 text-red-600 dark:text-red-400" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/></svg>';
+            $html .= '<span>Errores detectados (Bloquean guardado)</span>';
+            $html .= '</div>';
+            $html .= '<ul class="mt-1.5 list-disc list-inside text-xs text-red-600 dark:text-red-300 space-y-0.5">';
+            foreach ($eval['errors'] as $err) {
+                $html .= '<li>' . e($err) . '</li>';
+            }
+            $html .= '</ul>';
+            $html .= '</div>';
+        }
+
+        if (!empty($eval['warnings'])) {
+            $html .= '<div class="p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 rounded-lg">';
+            $html .= '<div class="flex items-center gap-2 font-semibold text-amber-700 dark:text-amber-400 text-xs uppercase tracking-wide">';
+            $html .= '<svg class="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>';
+            $html .= '<span>Avisos de Continuidad y GAP</span>';
+            $html .= '</div>';
+            $html .= '<ul class="mt-1.5 list-disc list-inside text-xs text-amber-700 dark:text-amber-300 space-y-0.5">';
+            foreach ($eval['warnings'] as $warn) {
+                $html .= '<li>' . e($warn) . '</li>';
+            }
+            $html .= '</ul>';
+            $html .= '</div>';
+        }
+
+        if (empty($eval['errors']) && empty($eval['warnings']) && !empty($eval['info'])) {
+            $html .= '<div class="p-3 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-800 rounded-lg">';
+            $html .= '<div class="flex items-center gap-2 font-semibold text-emerald-700 dark:text-emerald-400 text-xs">';
+            $html .= '<svg class="w-4 h-4 shrink-0 text-emerald-600 dark:text-emerald-400" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>';
+            $html .= '<span>' . e(implode(' ', $eval['info'])) . '</span>';
+            $html .= '</div>';
+            $html .= '</div>';
+        }
+
+        $html .= '</div>';
+
+        return new HtmlString($html);
+    }
+
+    public static function renderNavigationHeaderHtml(DrillHoleSample $record): HtmlString
+    {
+        $allIds = static::getOrderedBarrenoSampleIds($record->barreno_id);
+        $currentIndex = array_search($record->id, $allIds);
+        $total = count($allIds);
+        $prevId = ($currentIndex !== false && $currentIndex > 0) ? $allIds[$currentIndex - 1] : null;
+        $nextId = ($currentIndex !== false && $currentIndex < $total - 1) ? $allIds[$currentIndex + 1] : null;
+
+        $prevSample = $prevId ? DrillHoleSample::find($prevId) : null;
+        $nextSample = $nextId ? DrillHoleSample::find($nextId) : null;
+
+        $currentIndexDisplay = $currentIndex !== false ? $currentIndex + 1 : 1;
+
+        $isControl = $record->sample_type === 'Control';
+        $typeLabel = $isControl ? 'Control QA/QC' : 'Original';
+        $badgeClass = $isControl
+            ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300 border border-amber-300 dark:border-amber-700'
+            : 'bg-primary-100 text-primary-800 dark:bg-primary-900/40 dark:text-primary-300 border border-primary-300 dark:border-primary-700';
+
+        $prevButton = $prevSample
+            ? '<button type="button" wire:click="navigateEditSample(\'' . $prevSample->id . '\')" class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md shadow-sm bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 transition focus:outline-none focus:ring-2 focus:ring-primary-500 cursor-pointer">
+                <svg class="w-4 h-4 text-gray-500 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+                <span>Anterior (' . e($prevSample->sample_number) . ')</span>
+               </button>'
+            : '<span class="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded-md text-gray-400 dark:text-gray-500 bg-gray-100 dark:bg-gray-800/40 border border-transparent cursor-not-allowed">
+                <span>← Primer muestra</span>
+               </span>';
+
+        $nextButton = $nextSample
+            ? '<button type="button" wire:click="navigateEditSample(\'' . $nextSample->id . '\')" class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md shadow-sm bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 transition focus:outline-none focus:ring-2 focus:ring-primary-500 cursor-pointer">
+                <span>Siguiente (' . e($nextSample->sample_number) . ')</span>
+                <svg class="w-4 h-4 text-gray-500 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+               </button>'
+            : '<span class="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded-md text-gray-400 dark:text-gray-500 bg-gray-100 dark:bg-gray-800/40 border border-transparent cursor-not-allowed">
+                <span>Última muestra →</span>
+               </span>';
+
+        $html = '
+        <div class="flex items-center justify-between p-2.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50/80 dark:bg-gray-800/50 mb-3 shadow-xs">
+            <div>' . $prevButton . '</div>
+            <div class="text-center px-2">
+                <div class="text-[11px] font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    Muestra ' . $currentIndexDisplay . ' de ' . $total . '
+                </div>
+                <div class="font-bold text-sm text-gray-800 dark:text-gray-100 flex items-center justify-center gap-2 mt-0.5">
+                    <span>' . e($record->sample_number) . '</span>
+                    <span class="px-2 py-0.5 text-[11px] font-medium rounded-full ' . $badgeClass . '">' . $typeLabel . '</span>
+                </div>
+            </div>
+            <div>' . $nextButton . '</div>
+        </div>';
+
+        return new HtmlString($html);
     }
 }

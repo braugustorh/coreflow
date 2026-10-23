@@ -28,8 +28,10 @@ class SampleValidationService
     public function validateDraftsForBarreno(int $barrenoId): void
     {
         $drafts = DrillHoleSample::where('barreno_id', $barrenoId)
-            ->where('status', 'draft')
-            ->where('capture_source', 'import')
+            ->where(function ($q) {
+                $q->where('status', 'draft')
+                  ->orWhereNull('status');
+            })
             ->get();
 
         $this->executeValidationOnSamples($drafts);
