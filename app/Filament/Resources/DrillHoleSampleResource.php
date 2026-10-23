@@ -210,7 +210,7 @@ class DrillHoleSampleResource extends Resource
                         ->relationship(
                             name: 'workOrder',
                             titleAttribute: 'work_order_code',
-                            modifyQueryUsing: fn(Builder $q) => $q->whereDoesntHave('drillHoleSamples', fn($s) => $s->where('is_archived', true))
+                            modifyQueryUsing: fn(Builder $query) => $query->whereDoesntHave('drillHoleSamples', fn($s) => $s->where('is_archived', true))
                         )
                         ->searchable()
                         ->preload()
