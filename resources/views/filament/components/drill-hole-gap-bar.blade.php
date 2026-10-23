@@ -4,16 +4,18 @@
 
 @php
     $record = $record ?? $getRecord();
-    $segments = $record ? \App\Services\GapCalculatorService::getVisualSegments($record) : [];
-    $startDepth = $record?->start_depth ?? 0;
-    $maxDepth = $record?->max_depth ?? 0;
+    $depthInfo = $record ? \App\Services\GapCalculatorService::getEffectiveMaxDepthInfo($record) : ['max_depth' => null, 'is_temporary' => false];
+    $startDepth = (float) ($record?->start_depth ?? 0);
+    $maxDepth = $depthInfo['max_depth'];
+    $isTemporary = $depthInfo['is_temporary'];
+    $segments = ($record && $maxDepth !== null) ? \App\Services\GapCalculatorService::getVisualSegments($record) : [];
     $gapsOnly = array_filter($segments, fn($s) => $s['type'] === 'gap');
     $validationsList = $record ? $record->gapValidations()->with('validator')->orderBy('from_depth')->get() : collect();
 @endphp
 
-@if(!$record || $maxDepth <= $startDepth)
+@if(!$record || $maxDepth === null || $maxDepth <= $startDepth)
     <div style="padding: 10px; background-color: #f3f4f6; color: #6b7280; border-radius: 6px; font-size: 12px; font-style: italic; text-align: center;">
-        Sin datos de profundidad máxima para generar el perfil visual.
+        Sin datos de profundidad para generar el perfil visual.
     </div>
 @else
     <div x-data="{ activePopover: null }" style="margin-top: 10px; margin-bottom: 10px; font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;">
@@ -25,6 +27,11 @@
                     <path d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
                 </svg>
                 Perfil Continuo de Profundidad ({{ number_format($startDepth, 2) }}m - {{ number_format($maxDepth, 2) }}m)
+                @if($isTemporary)
+                    <span style="font-size: 11px; font-weight: 600; background-color: #fef3c7; color: #92400e; padding: 2px 8px; border-radius: 4px; border: 1px solid #fde68a;">
+                        Avance según última muestra
+                    </span>
+                @endif
             </div>
             
             <div style="display: flex; align-items: center; gap: 16px;">

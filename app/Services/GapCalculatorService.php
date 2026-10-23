@@ -7,6 +7,55 @@ use App\Models\DrillHole;
 class GapCalculatorService
 {
     /**
+     * Obtiene la información de profundidad máxima efectiva del barreno.
+     * Si max_depth no está declarada en el modelo, se asume temporalmente
+     * el to_depth más alto de las muestras originales (incluyendo borradores y oficiales).
+     *
+     * @param DrillHole $drillHole
+     * @return array{max_depth: ?float, is_temporary: bool}
+     */
+    public static function getEffectiveMaxDepthInfo(DrillHole $drillHole): array
+    {
+        $startDepth = (float) ($drillHole->start_depth ?? 0.0);
+        $declaredMax = $drillHole->max_depth !== null ? (float) $drillHole->max_depth : null;
+
+        if ($declaredMax !== null && $declaredMax > $startDepth) {
+            return [
+                'max_depth'    => $declaredMax,
+                'is_temporary' => false,
+            ];
+        }
+
+        // Buscar el to_depth máximo de muestras originales (incluyendo borradores y oficiales)
+        $maxSampleTo = $drillHole->drillHoleSamples()
+            ->where(function ($q) {
+                $q->whereNull('sample_type')
+                  ->orWhere('sample_type', 'O')
+                  ->orWhereNotIn('sample_type', ['CONTROL', 'Control', 'control']);
+            })
+            ->where(function ($q) {
+                $q->whereNull('control_type')
+                  ->orWhere('control_type', '');
+            })
+            ->whereNotNull('to_depth')
+            ->whereNotNull('from_depth')
+            ->whereColumn('to_depth', '>', 'from_depth')
+            ->max('to_depth');
+
+        if ($maxSampleTo !== null && (float) $maxSampleTo > $startDepth) {
+            return [
+                'max_depth'    => (float) $maxSampleTo,
+                'is_temporary' => true,
+            ];
+        }
+
+        return [
+            'max_depth'    => null,
+            'is_temporary' => false,
+        ];
+    }
+
+    /**
      * Calcula todos los tramos faltantes (gaps) no cubiertos por muestras originales ni por validaciones previas.
      *
      * @param DrillHole $drillHole
@@ -15,9 +64,11 @@ class GapCalculatorService
     public static function calculateGaps(DrillHole $drillHole): array
     {
         $startDepth = (float) ($drillHole->start_depth ?? 0.0);
-        $maxDepth   = (float) ($drillHole->max_depth ?? 0.0);
+        $depthInfo  = self::getEffectiveMaxDepthInfo($drillHole);
+        $maxDepth   = $depthInfo['max_depth'];
+        $isTemporary = $depthInfo['is_temporary'];
 
-        if ($maxDepth <= $startDepth) {
+        if ($maxDepth === null || $maxDepth <= $startDepth) {
             return [];
         }
 
@@ -26,7 +77,11 @@ class GapCalculatorService
             ->where(function ($q) {
                 $q->whereNull('sample_type')
                   ->orWhere('sample_type', 'O')
-                  ->orWhere('sample_type', '!=', 'CONTROL');
+                  ->orWhereNotIn('sample_type', ['CONTROL', 'Control', 'control']);
+            })
+            ->where(function ($q) {
+                $q->whereNull('control_type')
+                  ->orWhere('control_type', '');
             })
             ->whereNotNull('from_depth')
             ->whereNotNull('to_depth')
@@ -103,7 +158,7 @@ class GapCalculatorService
             $cursor = max($cursor, $interval['to']);
         }
 
-        if ($cursor < $maxDepth - 0.001) {
+        if (!$isTemporary && $cursor < $maxDepth - 0.001) {
             $gaps[] = [
                 'from_depth' => round($cursor, 2),
                 'to_depth'   => round($maxDepth, 2),
@@ -119,20 +174,27 @@ class GapCalculatorService
      */
     public static function getVisualSegments(DrillHole $drillHole): array
     {
-        $startDepth = (float) ($drillHole->start_depth ?? 0.0);
-        $maxDepth   = (float) ($drillHole->max_depth ?? 0.0);
-        $totalSpan  = $maxDepth - $startDepth;
+        $startDepth  = (float) ($drillHole->start_depth ?? 0.0);
+        $depthInfo   = self::getEffectiveMaxDepthInfo($drillHole);
+        $maxDepth    = $depthInfo['max_depth'];
+        $isTemporary = $depthInfo['is_temporary'];
 
-        if ($totalSpan <= 0) {
+        if ($maxDepth === null || ($maxDepth - $startDepth) <= 0) {
             return [];
         }
+
+        $totalSpan = $maxDepth - $startDepth;
 
         // Muestras originales
         $samples = $drillHole->drillHoleSamples()
             ->where(function ($q) {
                 $q->whereNull('sample_type')
                   ->orWhere('sample_type', 'O')
-                  ->orWhere('sample_type', '!=', 'CONTROL');
+                  ->orWhereNotIn('sample_type', ['CONTROL', 'Control', 'control']);
+            })
+            ->where(function ($q) {
+                $q->whereNull('control_type')
+                  ->orWhere('control_type', '');
             })
             ->whereNotNull('from_depth')
             ->whereNotNull('to_depth')
@@ -224,7 +286,7 @@ class GapCalculatorService
             $cursor = max($cursor, $block['to']);
         }
 
-        if ($cursor < $maxDepth - 0.001) {
+        if (!$isTemporary && $cursor < $maxDepth - 0.001) {
             $blocks[] = [
                 'from'        => round($cursor, 2),
                 'to'          => round($maxDepth, 2),

@@ -158,19 +158,23 @@ class DrillHolesTable
                         if ($record->is_historical) {
                             return 'Histórico';
                         }
-                        $maxDepth = (float) ($record->max_depth ?? 0);
-                        if ($maxDepth <= 0) {
+                        $depthInfo = GapCalculatorService::getEffectiveMaxDepthInfo($record);
+                        if ($depthInfo['max_depth'] === null) {
                             return 'Sin Prof. Máx.';
                         }
                         $gaps = GapCalculatorService::calculateGaps($record);
-                        return empty($gaps) ? '100% Cubierto' : count($gaps) . ' Gap(s) Pendiente(s)';
+                        $isTemp = $depthInfo['is_temporary'];
+                        if (empty($gaps)) {
+                            return $isTemp ? 'Cubierto (Avance)' : '100% Cubierto';
+                        }
+                        return count($gaps) . ' Gap(s) ' . ($isTemp ? '(Avance)' : 'Pendiente(s)');
                     })
                     ->color(function (DrillHole $record): string {
                         if ($record->is_historical) {
                             return 'gray';
                         }
-                        $maxDepth = (float) ($record->max_depth ?? 0);
-                        if ($maxDepth <= 0) {
+                        $depthInfo = GapCalculatorService::getEffectiveMaxDepthInfo($record);
+                        if ($depthInfo['max_depth'] === null) {
                             return 'gray';
                         }
                         $gaps = GapCalculatorService::calculateGaps($record);
@@ -180,17 +184,21 @@ class DrillHolesTable
                         if ($record->is_historical) {
                             return 'heroicon-o-archive-box';
                         }
-                        $maxDepth = (float) ($record->max_depth ?? 0);
-                        if ($maxDepth <= 0) {
+                        $depthInfo = GapCalculatorService::getEffectiveMaxDepthInfo($record);
+                        if ($depthInfo['max_depth'] === null) {
                             return 'heroicon-o-minus-circle';
                         }
                         $gaps = GapCalculatorService::calculateGaps($record);
                         return empty($gaps) ? 'heroicon-o-check-circle' : 'heroicon-o-exclamation-triangle';
                     })
                     ->tooltip(function (DrillHole $record): ?string {
+                        $depthInfo = GapCalculatorService::getEffectiveMaxDepthInfo($record);
                         $valCount = $record->gapValidations()->count();
                         $gaps = GapCalculatorService::calculateGaps($record);
                         $parts = [];
+                        if ($depthInfo['is_temporary'] && $depthInfo['max_depth'] !== null) {
+                            $parts[] = 'Profundidad al avance: ' . number_format($depthInfo['max_depth'], 2) . 'm';
+                        }
                         if (!empty($gaps)) {
                             $parts[] = count($gaps) . ' gap(s) pendiente(s)';
                         }
@@ -369,13 +377,26 @@ class DrillHolesTable
                     ->modalDescription('Revise los tramos sin información y seleccione cuáles desea validar asignando la razón justificada.')
                     ->modalSubmitActionLabel('Validar Gaps Seleccionados')
                     ->form(function (DrillHole $record) {
+                        $depthInfo = GapCalculatorService::getEffectiveMaxDepthInfo($record);
+                        if ($depthInfo['max_depth'] === null) {
+                            return [
+                                Placeholder::make('no_depth_info')
+                                    ->label('Sin Profundidad Registrada')
+                                    ->content(new HtmlString('<div style="padding: 12px 16px; background-color: #fef2f2; color: #991b1b; border: 1px solid #fecaca; border-radius: 8px; font-size: 13px; font-weight: 500;">Este barreno no cuenta con profundidad máxima declarada ni muestras con intervalos registrados. Registre la profundidad máxima en el barreno o importe muestras para evaluar los gaps.</div>')),
+                            ];
+                        }
+
                         $gaps = GapCalculatorService::calculateGaps($record);
 
                         if (empty($gaps)) {
+                            $coverageMsg = $depthInfo['is_temporary']
+                                ? 'Este barreno no presenta ningún gap sin información hasta la última muestra registrada (' . number_format($depthInfo['max_depth'], 2) . 'm). El tramo al avance está cubierto o validado.'
+                                : 'Este barreno no presenta ningún gap sin información. El 100% del tramo está muestreado o validado.';
+
                             return [
                                 Placeholder::make('no_gaps_info')
                                     ->label('Estado de Cobertura')
-                                    ->content(new HtmlString('<div style="padding: 12px 16px; background-color: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0; border-radius: 8px; font-size: 13px; font-weight: 500; display: flex; align-items: center; gap: 10px;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#059669" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 20px; height: 20px; min-width: 20px; min-height: 20px; display: inline-block;"><path d="M5 13l4 4L19 7"></path></svg><span>Este barreno no presenta ningún gap sin información. El 100% del tramo está muestreado o validado.</span></div>')),
+                                    ->content(new HtmlString('<div style="padding: 12px 16px; background-color: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0; border-radius: 8px; font-size: 13px; font-weight: 500; display: flex; align-items: center; gap: 10px;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#059669" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 20px; height: 20px; min-width: 20px; min-height: 20px; display: inline-block;"><path d="M5 13l4 4L19 7"></path></svg><span>' . e($coverageMsg) . '</span></div>')),
                                 ViewField::make('visual_bar')
                                     ->view('filament.components.drill-hole-gap-bar')
                             ];

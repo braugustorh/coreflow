@@ -60,14 +60,16 @@ class SampleValidationService
                     ->sortBy(fn($s) => (float) $s->from_depth)
                     ->values();
 
-                $overlapErrors = [];
-                $gapWarnings   = [];
-                $previousTo    = null;
-                $previousSampleId = null;
-
-                // Obtener validaciones de gaps existentes para este barreno
+                // Obtener validaciones de gaps existentes para este barreno y profundidad inicial
+                $barrenoModel = \App\Models\DrillHole::find($barrenoId);
+                $startDepth = (float) ($barrenoModel?->start_depth ?? 0.0);
                 $existingGapValidations = \App\Models\DrillHoleGapValidation::where('barreno_id', $barrenoId)->get();
                 $unvalidatedGapsToNotify = [];
+
+                $overlapErrors = [];
+                $gapWarnings   = [];
+                $previousTo    = $startDepth;
+                $previousSampleId = null;
 
                 foreach ($originals as $sample) {
                     $from = (float) $sample->from_depth;
@@ -78,7 +80,9 @@ class SampleValidationService
 
                         if ($from < $previousTo) {
                             // Traslape
-                            $overlapErrors[$sample->id] = "Traslape: FROM ({$from}) < TO anterior ({$previousTo}).";
+                            $overlapErrors[$sample->id] = $previousSampleId !== null
+                                ? "Traslape: FROM ({$from}) < TO anterior ({$previousTo})."
+                                : "Traslape: FROM ({$from}) menor a la profundidad inicial del barreno ({$previousTo}).";
                         } elseif ($diff > 0.011) {
                             // Verificar si este tramo (de $previousTo a $from) ya está cubierto por validaciones de gap
                             $isValidated = $existingGapValidations->contains(function ($gv) use ($previousTo, $from) {
@@ -86,7 +90,8 @@ class SampleValidationService
                             });
 
                             if (!$isValidated) {
-                                $gapWarnings[$sample->id] = "GAP de {$diff} m sin validar (de {$previousTo}m a {$from}m). El Administrador o Supervisor Coreshack debe validar la razón de no muestreo en Barrenos.";
+                                $gapPrefix = $previousSampleId === null ? 'GAP inicial' : 'GAP';
+                                $gapWarnings[$sample->id] = "{$gapPrefix} de {$diff} m sin validar (de {$previousTo}m a {$from}m). El Administrador o Supervisor Coreshack debe validar la razón de no muestreo en Barrenos.";
                                 $unvalidatedGapsToNotify[] = [
                                     'barreno_id' => $barrenoId,
                                     'from'       => $previousTo,
