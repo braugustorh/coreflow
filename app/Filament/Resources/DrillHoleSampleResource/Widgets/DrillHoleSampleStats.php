@@ -68,7 +68,7 @@ class DrillHoleSampleStats extends BaseWidget
                     if (str_contains($u, 'GAP')) {
                         $seen['GAPs'] = true;
                     } elseif (str_contains($u, 'TRASLAPE')) {
-                        $seen['Traslape'] = true;
+                        $seen['Traslapes'] = true;
                     } elseif (str_contains($u, 'LONGITUD') || str_contains($u, 'FROM')) {
                         $seen['Longitud'] = true;
                     } elseif (str_contains($u, 'RECUPERACIÓN') || str_contains($u, 'RECUPERACION')) {
@@ -82,7 +82,7 @@ class DrillHoleSampleStats extends BaseWidget
                     }
                 }
                 foreach ($seen as $cat => $val) {
-                    $categories[$cat]++;
+                    $categories[$cat] = ($categories[$cat] ?? 0) + 1;
                 }
             }
 
