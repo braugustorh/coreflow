@@ -1722,52 +1722,31 @@ class AgileCapture extends Page implements HasForms, HasTable
         $allIds = static::getOrderedBarrenoSampleIds($record->barreno_id);
         $currentIndex = array_search($record->id, $allIds);
         $total = count($allIds);
-        $prevId = ($currentIndex !== false && $currentIndex > 0) ? $allIds[$currentIndex - 1] : null;
-        $nextId = ($currentIndex !== false && $currentIndex < $total - 1) ? $allIds[$currentIndex + 1] : null;
-
-        $prevSample = $prevId ? DrillHoleSample::find($prevId) : null;
-        $nextSample = $nextId ? DrillHoleSample::find($nextId) : null;
-
         $currentIndexDisplay = $currentIndex !== false ? $currentIndex + 1 : 1;
 
         $isControl = $record->sample_type === 'Control';
         $typeLabel = $isControl ? 'Control QA/QC' : 'Original';
+        if ($isControl && !empty($record->control_type)) {
+            $typeLabel = 'Control (' . $record->control_type . ')';
+        }
         $badgeClass = $isControl ? 'ac-badge-control' : 'ac-badge-original';
         $badgeInlineStyle = $isControl
             ? 'background-color: #fef3c7; color: #92400e; border: 1px solid #fde68a;'
             : 'background-color: #e0e7ff; color: #3730a3; border: 1px solid #c7d2fe;';
 
-        $prevButton = $prevSample
-            ? '<button type="button" wire:click="navigateEditSample(\'' . $prevSample->id . '\')" class="ac-modal-nav-btn" style="display: inline-flex; align-items: center; gap: 0.375rem; padding: 0.375rem 0.75rem; font-size: 0.75rem; font-weight: 600; border-radius: 0.375rem; background-color: #ffffff; color: #374151; border: 1px solid #d1d5db; cursor: pointer; text-decoration: none; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 14px; height: 14px; min-width: 14px; min-height: 14px; max-width: 14px; max-height: 14px; flex-shrink: 0; color: #6b7280;"><path d="M15 19l-7-7 7-7"/></svg>
-                <span>Anterior (' . e($prevSample->sample_number) . ')</span>
-               </button>'
-            : '<span class="ac-modal-nav-disabled" style="display: inline-flex; align-items: center; gap: 0.25rem; padding: 0.375rem 0.75rem; font-size: 0.75rem; font-weight: 500; border-radius: 0.375rem; color: #9ca3af; background-color: #f3f4f6; border: 1px solid transparent; cursor: not-allowed;">
-                <span>← Primer muestra</span>
-               </span>';
-
-        $nextButton = $nextSample
-            ? '<button type="button" wire:click="navigateEditSample(\'' . $nextSample->id . '\')" class="ac-modal-nav-btn" style="display: inline-flex; align-items: center; gap: 0.375rem; padding: 0.375rem 0.75rem; font-size: 0.75rem; font-weight: 600; border-radius: 0.375rem; background-color: #ffffff; color: #374151; border: 1px solid #d1d5db; cursor: pointer; text-decoration: none; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
-                <span>Siguiente (' . e($nextSample->sample_number) . ')</span>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 14px; height: 14px; min-width: 14px; min-height: 14px; max-width: 14px; max-height: 14px; flex-shrink: 0; color: #6b7280;"><path d="M9 5l7 7-7 7"/></svg>
-               </button>'
-            : '<span class="ac-modal-nav-disabled" style="display: inline-flex; align-items: center; gap: 0.25rem; padding: 0.375rem 0.75rem; font-size: 0.75rem; font-weight: 500; border-radius: 0.375rem; color: #9ca3af; background-color: #f3f4f6; border: 1px solid transparent; cursor: not-allowed;">
-                <span>Última muestra →</span>
-               </span>';
+        $progressPct = $total > 0 ? round(($currentIndexDisplay / $total) * 100) : 0;
 
         $html = '
-        <div class="ac-modal-nav-container" style="display: flex; align-items: center; justify-content: space-between; padding: 0.625rem 0.875rem; border-radius: 0.5rem; border: 1px solid #e2e8f0; background-color: rgba(248, 250, 252, 0.95); margin-bottom: 0.75rem; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);">
-            <div>' . $prevButton . '</div>
-            <div class="ac-modal-sample-center" style="text-align: center; padding: 0 0.5rem;">
-                <div class="ac-modal-sample-counter" style="font-size: 0.6875rem; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em;">
-                    Muestra ' . $currentIndexDisplay . ' de ' . $total . '
+        <div class="ac-modal-nav-container" style="display: flex; align-items: center; justify-content: center; padding: 0.75rem 1rem; border-radius: 0.5rem; border: 1px solid #e2e8f0; background-color: rgba(248, 250, 252, 0.95); margin-bottom: 0.75rem; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);">
+            <div class="ac-modal-sample-center" style="text-align: center; width: 100%;">
+                <div class="ac-modal-sample-counter" style="font-size: 0.75rem; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.06em;">
+                    MUESTRA ' . $currentIndexDisplay . ' DE ' . $total . ' (' . $progressPct . '%)
                 </div>
-                <div class="ac-modal-sample-details" style="display: flex; align-items: center; justify-content: center; gap: 0.5rem; margin-top: 0.125rem;">
-                    <span class="ac-modal-sample-num" style="font-weight: 700; font-size: 0.9375rem; color: #1e293b;">#' . e($record->sample_number) . '</span>
-                    <span class="ac-modal-sample-badge ' . $badgeClass . '" style="display: inline-block; padding: 0.125rem 0.5rem; font-size: 0.6875rem; font-weight: 600; border-radius: 9999px; ' . $badgeInlineStyle . '">' . $typeLabel . '</span>
+                <div class="ac-modal-sample-details" style="display: flex; align-items: center; justify-content: center; gap: 0.625rem; margin-top: 0.25rem;">
+                    <span class="ac-modal-sample-num" style="font-weight: 800; font-size: 1.1rem; color: #1e293b; letter-spacing: -0.01em;">#' . e($record->sample_number) . '</span>
+                    <span class="ac-modal-sample-badge ' . $badgeClass . '" style="display: inline-block; padding: 0.15rem 0.6rem; font-size: 0.7rem; font-weight: 700; border-radius: 9999px; ' . $badgeInlineStyle . '">' . $typeLabel . '</span>
                 </div>
             </div>
-            <div>' . $nextButton . '</div>
         </div>';
 
         return new HtmlString($html);
