@@ -594,6 +594,66 @@ class AgileCapture extends Page implements HasForms, HasTable
         }
     }
 
+    /**
+     * Exporta a Excel (.xlsx) las muestras seleccionadas en la tabla, respetando el orden activo.
+     */
+    public function exportSamplesToExcel(Collection $records): \Symfony\Component\HttpFoundation\StreamedResponse
+    {
+        $barrenoName = $this->barreno?->nombre_barreno ?? 'barreno';
+        $fileName = 'captura-agil-' . Str::slug($barrenoName) . '-' . now()->format('Ymd-His') . '.xlsx';
+
+        $query = DrillHoleSample::query()
+            ->whereIn('id', $records->pluck('id'))
+            ->orderBy('sample_number', 'asc')
+            ->with(['standardSample', 'workOrder', 'barreno'])
+            ->withCount('qcPhotos');
+
+        return response()->streamDownload(function () use ($query) {
+            $writer = new \OpenSpout\Writer\XLSX\Writer();
+            $writer->openToFile('php://output');
+
+            $writer->addRow(\OpenSpout\Common\Entity\Row::fromValues([
+                'Barreno', 'Sample Number', 'From', 'To', 'Drilled Length', 'Sample Length',
+                'Sample Type', 'Control Type', 'Fotos QC', 'Core Size', 'Weight',
+                'Fecha Muestreo', 'WO', 'Comentarios',
+            ]));
+
+            $query->chunk(500, function ($samples) use ($writer) {
+                foreach ($samples as $s) {
+                    $controlType = $s->control_type;
+                    if (in_array($controlType, ['Standard', 'Estándar'], true) && $s->standardSample) {
+                        $controlType = 'STD-' . $s->standardSample->standard_name;
+                    }
+
+                    $photos = $s->requiresQcPhotos()
+                        ? ($s->qc_photos_count . '/' . DrillHoleSample::QC_PHOTOS_REQUIRED)
+                        : '—';
+
+                    $writer->addRow(\OpenSpout\Common\Entity\Row::fromValues([
+                        $s->barreno?->nombre_barreno,
+                        $s->sample_number,
+                        $s->from_depth !== null ? (float) $s->from_depth : null,
+                        $s->to_depth !== null ? (float) $s->to_depth : null,
+                        $s->length !== null ? (float) $s->length : null,
+                        $s->sample_length !== null ? (float) $s->sample_length : null,
+                        $s->sample_type,
+                        $controlType,
+                        $photos,
+                        $s->core_size,
+                        $s->weight !== null ? (float) $s->weight : null,
+                        $s->sampled_at?->format('d/m/Y H:i'),
+                        $s->workOrder?->work_order_code,
+                        $s->comentarios,
+                    ]));
+                }
+            });
+
+            $writer->close();
+        }, $fileName, [
+            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        ]);
+    }
+
     public function table(Table $table): Table
     {
         return $table
@@ -623,7 +683,7 @@ class AgileCapture extends Page implements HasForms, HasTable
                     ->sortable()
                     ->toggleable(),
                 TextColumn::make('length')
-                    ->label('Drilled Length')
+                    ->label('Length')
                     ->numeric(2)
                     ->sortable()
                     ->toggleable(),
@@ -1182,6 +1242,12 @@ class AgileCapture extends Page implements HasForms, HasTable
                     }),
             ])
             ->bulkActions([
+                BulkAction::make('exportExcel')
+                    ->label('Exportar Excel')
+                    ->icon('heroicon-o-arrow-down-tray')
+                    ->color('success')
+                    ->deselectRecordsAfterCompletion()
+                    ->action(fn (Collection $records) => $this->exportSamplesToExcel($records)),
                 BulkAction::make('assignCoreSize')
                     ->label('Asignar Core Size')
                     ->icon('heroicon-o-circle-stack')

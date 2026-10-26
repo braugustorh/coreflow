@@ -9,7 +9,10 @@ use App\Notifications\GapValidatedNotification;
 use App\Services\GapCalculatorService;
 use Filament\Actions\Action;
 use Illuminate\Support\Facades\Notification as FacadesNotification;
+use Filament\Actions\BulkAction;
 use Filament\Actions\BulkActionGroup;
+use Illuminate\Support\Collection;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
 use Filament\Forms\Components\Checkbox;
@@ -29,6 +32,64 @@ use Illuminate\Support\HtmlString;
 
 class DrillHolesTable
 {
+    /**
+     * Exporta a Excel (.xlsx) los barrenos seleccionados.
+     */
+    protected static function exportToExcel(Collection $records): StreamedResponse
+    {
+        $query = DrillHole::query()
+            ->whereIn('id', $records->pluck('id'))
+            ->orderBy('nombre_barreno')
+            ->with(['sede:id,name', 'proyecto:id,nombre', 'parent:id,nombre_barreno']);
+
+        return response()->streamDownload(function () use ($query) {
+            $writer = new \OpenSpout\Writer\XLSX\Writer();
+            $writer->openToFile('php://output');
+
+            $writer->addRow(\OpenSpout\Common\Entity\Row::fromValues([
+                'ID Barreno', 'Target', 'Distrito', 'Proyecto', 'Jerarquía', 'Tipo',
+                'Tipo de Perforación', 'Core Size', 'Prof. Máx.',
+                'Easting', 'Northing', 'Elevation',
+                'Planned Easting', 'Planned Northing', 'Planned Elevation',
+                'Planilla', 'Fecha Creación',
+            ]));
+
+            $num = fn ($v) => $v !== null ? (float) $v : null;
+
+            $query->chunk(500, function ($holes) use ($writer, $num) {
+                foreach ($holes as $h) {
+                    $hierarchy = $h->is_child
+                        ? ($h->parent ? 'Hijo de ' . $h->parent->nombre_barreno : 'Hijo (Wedge)')
+                        : ($h->hasChildren() ? 'Madre' : 'Principal');
+
+                    $writer->addRow(\OpenSpout\Common\Entity\Row::fromValues([
+                        $h->nombre_barreno,
+                        $h->target,
+                        $h->sede?->name,
+                        $h->proyecto?->nombre,
+                        $hierarchy,
+                        $h->is_historical ? 'Histórico' : 'Operativo',
+                        $h->drilling_type,
+                        $h->core_size,
+                        $num($h->max_depth),
+                        $num($h->easting),
+                        $num($h->northing),
+                        $num($h->elevation),
+                        $num($h->planned_easting),
+                        $num($h->planned_northing),
+                        $num($h->planned_elevation),
+                        $h->planilla,
+                        $h->created_at?->format('d/m/Y H:i'),
+                    ]));
+                }
+            });
+
+            $writer->close();
+        }, 'drill-holes-' . now()->format('Ymd-His') . '.xlsx', [
+            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        ]);
+    }
+
     public static function configure(Table $table): Table
     {
         return $table
@@ -542,6 +603,12 @@ class DrillHolesTable
             ])
             ->toolbarActions([
                 BulkActionGroup::make([
+                    BulkAction::make('exportExcel')
+                        ->label('Exportar Excel')
+                        ->icon('heroicon-o-arrow-down-tray')
+                        ->color('success')
+                        ->deselectRecordsAfterCompletion()
+                        ->action(fn (Collection $records) => static::exportToExcel($records)),
                     DeleteBulkAction::make(),
                 ]),
             ])
