@@ -768,6 +768,11 @@
             color: #94a3b8;
         }
 
+        .ac-grid-input-required {
+            border-color: #ca8a04 !important;
+            background: #fefce8 !important;
+        }
+
         .ac-btn-icon {
             background: none;
             border: none;
@@ -1473,12 +1478,14 @@
                                         <!-- Desde -->
                                         <td>
                                             <input type="number" step="0.01" x-model="sample.from_depth" class="ac-grid-input"
-                                                style="width: 70px;" :disabled="sample.sample_type === 'Control'">
+                                                style="width: 70px;" :disabled="sample.sample_type === 'Control'"
+                                                x-on:blur="autoFillLowRecoveryComment(index)">
                                         </td>
                                         <!-- Hasta -->
                                         <td>
                                             <input type="number" step="0.01" x-model="sample.to_depth" class="ac-grid-input"
-                                                style="width: 70px;" :disabled="sample.sample_type === 'Control'">
+                                                style="width: 70px;" :disabled="sample.sample_type === 'Control'"
+                                                x-on:blur="autoFillLowRecoveryComment(index)">
                                         </td>
                                         <!-- Length (Calculado, no editable) -->
                                         <td>
@@ -1490,6 +1497,7 @@
                                             <input type="number" step="0.01" x-model="sample.sample_length"
                                                 class="ac-grid-input" style="width: 70px;"
                                                 :disabled="sample.sample_type === 'Control'"
+                                                x-on:blur="autoFillLowRecoveryComment(index)"
                                                 x-on:keydown.enter.prevent="addEmptyRow()">
                                         </td>
                                         <!-- Peso -->
@@ -1500,7 +1508,9 @@
                                         <!-- Comentarios -->
                                         <td>
                                             <input type="text" x-model="sample.comentarios" list="comentarios-sugeridos"
-                                                class="ac-grid-input" style="width: 150px;" placeholder="Opcional">
+                                                class="ac-grid-input" style="width: 150px;"
+                                                :class="isLowRecoveryRow(index) && (!sample.comentarios || sample.comentarios.trim() === '') ? 'ac-grid-input-required' : ''"
+                                                :placeholder="isLowRecoveryRow(index) ? 'Obligatorio: baja recuperación' : 'Opcional'">
                                         </td>
                                         <!-- Validación -->
                                         <td style="text-align:center; min-width: 90px;">
@@ -2022,6 +2032,8 @@
                                 return 'Real > Longitud';
                             }else if (sl===0){
                                 return 'Sple. Length > 0';
+                            } else if (sl < length && (!sample.comentarios || sample.comentarios.trim() === '')) {
+                                return 'Comentarios requerido (Baja Recup.)';
                             }
 
                             // Validar traslapes con la base de datos
@@ -2081,6 +2093,27 @@
                             if (this.getRowError(i)) return true;
                         }
                         return false;
+                    },
+
+                    // ─── Baja Recuperación (Sample Length < Length) ────────────────
+                    isLowRecoveryRow(index) {
+                        let sample = this.samples[index];
+                        if (!sample || sample.sample_type === 'Control') return false;
+                        let fd = parseFloat(sample.from_depth);
+                        let td = parseFloat(sample.to_depth);
+                        let sl = parseFloat(sample.sample_length);
+                        if (isNaN(fd) || isNaN(td) || isNaN(sl) || sl <= 0 || td <= fd) return false;
+                        let length = Math.round((td - fd) * 100) / 100;
+                        return sl < (length - 0.001);
+                    },
+
+                    autoFillLowRecoveryComment(index) {
+                        if (this.isLowRecoveryRow(index)) {
+                            let sample = this.samples[index];
+                            if (!sample.comentarios || sample.comentarios.trim() === '') {
+                                sample.comentarios = 'baja recuperacion';
+                            }
+                        }
                     },
 
                     saveBatch() {

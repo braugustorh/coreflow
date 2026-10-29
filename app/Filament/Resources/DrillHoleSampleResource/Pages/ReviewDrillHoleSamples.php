@@ -55,6 +55,40 @@ class ReviewDrillHoleSamples extends Page implements HasForms, HasTable
     {
         $this->record = $record;
         $this->drillHole = DrillHole::with(['sede', 'proyecto'])->findOrFail($record);
+
+        $this->notifyLowRecoveryPendingIfAny();
+    }
+
+    /**
+     * Notificación emergente (toast) al entrar a la revisión si existen muestras
+     * con baja recuperación (Sample Length < Length) sin comentario asignado.
+     * Complementa el banner fijo y la acción de cabecera para evitar que pase
+     * desapercibido en barrenos con cientos de muestras.
+     */
+    protected function notifyLowRecoveryPendingIfAny(): void
+    {
+        $pending = $this->getLowRecoveryPendingCountProperty();
+
+        if ($pending > 0) {
+            Notification::make()
+                ->title("⚠️ {$pending} muestra(s) con baja recuperación sin comentario")
+                ->body('Se detectaron muestras con Sample Length < Length cuyo campo Comentarios está vacío. Usa el botón "Baja Recuperación" en la parte superior para revisarlas o aplicar el comentario masivamente.')
+                ->warning()
+                ->persistent()
+                ->send();
+        }
+    }
+
+    /**
+     * Conteo de muestras del barreno con baja recuperación y comentarios vacíos.
+     * Usado por el banner fijo, la notificación de entrada y la acción de cabecera.
+     */
+    public function getLowRecoveryPendingCountProperty(): int
+    {
+        return DrillHoleSample::where('barreno_id', (int) $this->record)
+            ->where('status', 'draft')
+            ->lowRecoveryMissingComment()
+            ->count();
     }
 
     public function getTitle(): string
@@ -173,7 +207,38 @@ class ReviewDrillHoleSamples extends Page implements HasForms, HasTable
                         ->success()
                         ->send();
                 }),
+            /*
+            Actions\Action::make('apply_low_recovery_comment_header')
+                ->label(function () {
+                    $pending = $this->getLowRecoveryPendingCountProperty();
+                    return $pending > 0 ? "⚠️ Baja Recuperación ({$pending} pendientes)" : 'Baja Recuperación';
+                })
+                ->icon('heroicon-o-exclamation-triangle')
+                ->color(fn () => $this->getLowRecoveryPendingCountProperty() > 0 ? 'warning' : 'gray')
+                ->visible(fn () => $this->getLowRecoveryPendingCountProperty() > 0)
+                ->requiresConfirmation()
+                ->modalHeading('Aplicar comentario de Baja Recuperación')
+                ->modalDescription('Se detectaron muestras con Sample Length < Length cuyo campo Comentarios está vacío. ¿Deseas aplicar automáticamente el comentario "baja recuperacion" a todos estos registros del barreno?')
+                ->modalSubmitActionLabel('Sí, aplicar a todos')
+                ->action(function (SampleValidationService $service) {
+                    $barrenoId = (int) $this->record;
+                    $updatedCount = DrillHoleSample::where('barreno_id', $barrenoId)
+                        ->where('status', 'draft')
+                        ->lowRecoveryMissingComment()
+                        ->update(['comentarios' => DrillHoleSample::LOW_RECOVERY_COMMENT]);
 
+                    if ($updatedCount > 0) {
+                        $service->validateDraftsForBarreno($barrenoId);
+                    }
+
+                    Notification::make()
+                        ->title($updatedCount > 0
+                            ? "Comentario 'baja recuperacion' aplicado a {$updatedCount} muestra(s)."
+                            : 'No se encontraron muestras pendientes de este comentario.')
+                        ->success()
+                        ->send();
+                }),
+            */
             Actions\Action::make('validate_data')
                 ->label('Validar Datos')
                 ->icon('heroicon-o-check-circle')
@@ -309,7 +374,7 @@ class ReviewDrillHoleSamples extends Page implements HasForms, HasTable
 
                 // Columna 2: No. Muestra
                 Tables\Columns\TextColumn::make('sample_number')
-                    ->label('Sample #')
+                    ->label('Sample')
                     ->searchable()
                     ->sortable()
                     ->copyable()
@@ -328,12 +393,12 @@ class ReviewDrillHoleSamples extends Page implements HasForms, HasTable
                     ->sortable(),
 
                 Tables\Columns\TextColumn::make('length')
-                    ->label('Longitud')
+                    ->label('Length')
                     ->numeric(2)
                     ->sortable(),
 
                 Tables\Columns\TextColumn::make('sample_length')
-                    ->label('Recup.')
+                    ->label('Spl Length')
                     ->numeric(2)
                     ->sortable(),
 
@@ -345,7 +410,7 @@ class ReviewDrillHoleSamples extends Page implements HasForms, HasTable
                     ->sortable(),
 
                 Tables\Columns\TextColumn::make('sample_type')
-                    ->label('SAMPLE TYPE')
+                    ->label('Spl Type')
                     ->badge()
                     ->state(fn($record) => strtoupper(trim((string)$record->sample_type)) === 'CONTROL' ? 'Control' : 'O')
                     ->color(fn(string $state): string => match ($state) {
@@ -435,7 +500,9 @@ class ReviewDrillHoleSamples extends Page implements HasForms, HasTable
 
                 Tables\Columns\TextColumn::make('comentarios')
                     ->label('Comentarios')
-                    ->limit(25),
+                    ->limit(25)
+                    ->description(fn(DrillHoleSample $record) => $record->needsLowRecoveryComment() ? '⚠️ Requiere "baja recuperacion"' : null)
+                    ->color(fn(DrillHoleSample $record) => $record->needsLowRecoveryComment() ? 'warning' : null),
             ])
             ->recordActions([
                 QcPhotosAction::make(),
@@ -447,6 +514,68 @@ class ReviewDrillHoleSamples extends Page implements HasForms, HasTable
                         : null
                     )
                     ->form(fn() => DrillHoleSampleResource::getSampleFormSchema())
+                    ->before(function (EditAction $action, DrillHoleSample $record, array $data) {
+                        $nuevoNumero = trim($data['sample_number'] ?? '');
+                        $proyectoId  = $record->proyecto_id ?? $record->barreno?->proyecto_id;
+
+                        if (!empty($nuevoNumero) && $proyectoId) {
+                            $duplicada = DrillHoleSample::where('proyecto_id', $proyectoId)
+                                ->where('sample_number', $nuevoNumero)
+                                ->where('id', '!=', $record->id)
+                                ->with('barreno')
+                                ->first();
+
+                            if ($duplicada) {
+                                $nombreBarreno = $duplicada->barreno?->nombre_barreno ?? 'desconocido';
+                                Notification::make()
+                                    ->title('Número de muestra duplicado')
+                                    ->body("La muestra '{$nuevoNumero}' ya existe en este proyecto (Barreno: {$nombreBarreno}). Por favor asigna un número único.")
+                                    ->danger()
+                                    ->persistent()
+                                    ->send();
+
+                                $action->halt();
+                            }
+                        }
+                    })
+                    ->using(function (DrillHoleSample $record, array $data, EditAction $action): DrillHoleSample {
+                        try {
+                            $record->update($data);
+                        } catch (\Throwable $e) {
+                            // Red de seguridad: si por una condición de carrera (dos usuarios
+                            // editando a la vez el mismo sample_number) o cualquier otro error
+                            // inesperado falla el guardado, SIEMPRE debe quedar visible para el
+                            // usuario. Nunca debe fallar en silencio.
+                            //
+                            // Importante: en Filament v4 los campos de una acción viven bajo el
+                            // state path "mountedActions.{N}.data.*", por lo que el error debe
+                            // lanzarse con esa clave completa para que se enlace visualmente al
+                            // campo correspondiente (de lo contrario el error existe mas no se
+                            // muestra en el formulario).
+                            $isUniqueViolation = $e instanceof \Illuminate\Database\QueryException
+                                && ((string) $e->getCode() === '23000' || str_contains($e->getMessage(), '1062'));
+
+                            $errorKey = "mountedActions.{$action->getNestingIndex()}.data.sample_number";
+
+                            if ($isUniqueViolation) {
+                                $message = "El número de muestra '{$data['sample_number']}' ya existe en este proyecto. Elige otro valor.";
+                            } else {
+                                report($e);
+                                $message = 'Ocurrió un error inesperado al guardar. Intenta nuevamente o contacta a soporte.';
+                            }
+
+                            Notification::make()
+                                ->title('No se pudo guardar la muestra')
+                                ->body($message)
+                                ->danger()
+                                ->send();
+
+                            throw \Illuminate\Validation\ValidationException::withMessages([
+                                $errorKey => $message,
+                            ]);
+                        }
+                        return $record;
+                    })
                     ->after(function (DrillHoleSample $record, SampleValidationService $service) use ($barrenoId) {
                         $service->validateDraftsForBarreno($barrenoId);
                     }),
@@ -466,13 +595,14 @@ class ReviewDrillHoleSamples extends Page implements HasForms, HasTable
                     ->label('Filtrar registros')
                     ->placeholder('Todos los registros')
                     ->options([
-                        'gaps'              => 'Gaps',
-                        'errors'            => 'Registro con errores',
-                        'originals'         => 'Registros de Originales',
-                        'standards'         => 'Estandards',
-                        'blanks'            => 'Blancos',
-                        'duplicates'        => 'Duplicados',
-                        'qc_missing_photos' => 'QC sin fotos',
+                        'gaps'                 => 'Gaps',
+                        'errors'               => 'Registro con errores',
+                        'originals'            => 'Registros de Originales',
+                        'standards'            => 'Estandards',
+                        'blanks'               => 'Blancos',
+                        'duplicates'           => 'Duplicados',
+                        'qc_missing_photos'    => 'QC sin fotos',
+                        'low_recovery_pending' => '⚠️ Baja recuperación sin comentario',
                     ])
                     ->query(function (Builder $query, array $data): Builder {
                         $values = (array) ($data['values'] ?? $data['value'] ?? []);
@@ -514,6 +644,7 @@ class ReviewDrillHoleSamples extends Page implements HasForms, HasTable
                                                 ->orWhereRaw("UPPER(TRIM(control_type)) LIKE '%DUP%'");
                                         }),
                                         'qc_missing_photos' => $q->requiringQcPhotos()->missingQcPhotos(),
+                                        'low_recovery_pending' => $q->lowRecoveryMissingComment(),
                                         default => null,
                                     };
                                 });
@@ -529,6 +660,37 @@ class ReviewDrillHoleSamples extends Page implements HasForms, HasTable
                         ->color('success')
                         ->action(function (Collection $records, SampleExportService $service) {
                             return $service->exportToExcel($records, $this->drillHole?->nombre_barreno);
+                        })
+                        ->deselectRecordsAfterCompletion(),
+
+                    BulkAction::make('apply_low_recovery_comment')
+                        ->label('Aplicar "baja recuperacion"')
+                        ->icon('heroicon-o-exclamation-triangle')
+                        ->color('warning')
+                        ->requiresConfirmation()
+                        ->modalHeading('Aplicar comentario de Baja Recuperación')
+                        ->modalDescription('Se aplicará el comentario "baja recuperacion" solo a las muestras seleccionadas que tengan Sample Length < Length y comentarios vacíos. Las demás se omiten.')
+                        ->modalSubmitActionLabel('Sí, aplicar')
+                        ->action(function (Collection $records, SampleValidationService $service) use ($barrenoId) {
+                            $eligible = $records->filter(fn(DrillHoleSample $s) => $s->needsLowRecoveryComment());
+
+                            foreach ($eligible as $record) {
+                                $record->update(['comentarios' => DrillHoleSample::LOW_RECOVERY_COMMENT]);
+                            }
+
+                            if ($eligible->isNotEmpty()) {
+                                $service->validateDraftsForBarreno($barrenoId);
+                            }
+
+                            $skipped = $records->count() - $eligible->count();
+
+                            Notification::make()
+                                ->title($eligible->isNotEmpty()
+                                    ? "Comentario aplicado a {$eligible->count()} muestra(s)."
+                                    : 'Ninguna de las muestras seleccionadas requería el comentario.')
+                                ->body($skipped > 0 ? "{$skipped} muestra(s) omitida(s) (no cumplen la condición o ya tenían comentario)." : null)
+                                ->success()
+                                ->send();
                         })
                         ->deselectRecordsAfterCompletion(),
 

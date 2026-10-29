@@ -502,6 +502,17 @@ class AgileCapture extends Page implements HasForms, HasTable
                     continue;
                 }
 
+                // Baja recuperación (sample_length < length): comentarios obligatorio
+                if (
+                    isset($data['sample_length']) &&
+                    DrillHoleSample::isLowRecovery((float) $data['length'], (float) $data['sample_length'])
+                ) {
+                    if (empty($data['comentarios']) || trim((string) $data['comentarios']) === '') {
+                        $errors[] = "Fila " . ($index + 1) . ": Baja recuperación detectada (Recuperación < Longitud). El campo Comentarios no puede estar vacío (ej. 'baja recuperacion').";
+                        continue;
+                    }
+                }
+
                 // Validar Traslape Backend
                 $hasOverlap = false;
                 foreach ($existingIntervals as $existing) {
@@ -795,7 +806,8 @@ class AgileCapture extends Page implements HasForms, HasTable
                                     $get('from_depth'),
                                     $get('to_depth'),
                                     $get('sample_length'),
-                                    $get('weight')
+                                    $get('weight'),
+                                    $get('comentarios')
                                 );
                                 return static::renderValidationLiveStatusHtml($eval);
                             }),
@@ -818,6 +830,7 @@ class AgileCapture extends Page implements HasForms, HasTable
                                             if ($from !== null && $to !== null && $to > $from) {
                                                 $set('length', round($to - $from, 2));
                                             }
+                                            static::maybeAutofillLowRecoveryComment($get, $set);
                                         })
                                         ->rules([
                                             fn (Get $get, ?DrillHoleSample $record) => function (string $attribute, $value, \Closure $fail) use ($get, $record) {
@@ -860,6 +873,7 @@ class AgileCapture extends Page implements HasForms, HasTable
                                             if ($from !== null && $to !== null && $to > $from) {
                                                 $set('length', round($to - $from, 2));
                                             }
+                                            static::maybeAutofillLowRecoveryComment($get, $set);
                                         })
                                         ->rules([
                                             fn (Get $get, ?DrillHoleSample $record) => function (string $attribute, $value, \Closure $fail) use ($get, $record) {
@@ -912,6 +926,9 @@ class AgileCapture extends Page implements HasForms, HasTable
                                         ->step(0.01)
                                         ->disabled(fn (?DrillHoleSample $record) => $record?->sample_type === 'Control')
                                         ->live(onBlur: true)
+                                        ->afterStateUpdated(function (Get $get, Set $set) {
+                                            static::maybeAutofillLowRecoveryComment($get, $set);
+                                        })
                                         ->helperText('Testigo físico recuperado en metros')
                                         ->rules([
                                             fn (Get $get, ?DrillHoleSample $record) => function (string $attribute, $value, \Closure $fail) use ($get, $record) {
@@ -975,6 +992,17 @@ class AgileCapture extends Page implements HasForms, HasTable
                                     ->label('Comentarios')
                                     ->placeholder('Observaciones relevantes sobre la muestra o el tramo...')
                                     ->rows(3)
+                                    ->required(function (Get $get, ?DrillHoleSample $record) {
+                                        if (!$record || $record->sample_type === 'Control') return false;
+                                        $from = is_numeric($get('from_depth')) ? (float) $get('from_depth') : null;
+                                        $to = is_numeric($get('to_depth')) ? (float) $get('to_depth') : null;
+                                        $sl = is_numeric($get('sample_length')) ? (float) $get('sample_length') : null;
+                                        if ($from === null || $to === null || $to <= $from || $sl === null) return false;
+                                        return DrillHoleSample::isLowRecovery(round($to - $from, 2), $sl);
+                                    })
+                                    ->validationMessages([
+                                        'required' => 'Baja recuperación detectada (Recuperación < Longitud): los Comentarios no pueden estar vacíos.',
+                                    ])
                                     ->columnSpanFull(),
                             ]),
                     ])
@@ -1007,7 +1035,7 @@ class AgileCapture extends Page implements HasForms, HasTable
                             $recup = isset($data['sample_length']) && is_numeric($data['sample_length']) ? (float)$data['sample_length'] : null;
                             $weight = isset($data['weight']) && is_numeric($data['weight']) ? (float)$data['weight'] : null;
 
-                            $eval = static::evaluateSampleInterval($record, $from, $to, $recup, $weight);
+                            $eval = static::evaluateSampleInterval($record, $from, $to, $recup, $weight, $data['comentarios'] ?? $record->comentarios);
 
                             if (!empty($eval['errors'])) {
                                 $msg = implode(' ', $eval['errors']);
@@ -1661,12 +1689,38 @@ class AgileCapture extends Page implements HasForms, HasTable
             ->toArray();
     }
 
+    /**
+     * Si la combinación actual de from/to/sample_length implica "baja recuperación"
+     * y el campo de comentarios está vacío, lo autocompleta con el texto estándar.
+     * No sobrescribe un comentario ya escrito por el usuario.
+     */
+    public static function maybeAutofillLowRecoveryComment(Get $get, Set $set): void
+    {
+        $from = is_numeric($get('from_depth')) ? (float) $get('from_depth') : null;
+        $to = is_numeric($get('to_depth')) ? (float) $get('to_depth') : null;
+        $sl = is_numeric($get('sample_length')) ? (float) $get('sample_length') : null;
+
+        if ($from === null || $to === null || $to <= $from || $sl === null) {
+            return;
+        }
+
+        $length = round($to - $from, 2);
+
+        if (DrillHoleSample::isLowRecovery($length, $sl)) {
+            $current = (string) ($get('comentarios') ?? '');
+            if (trim($current) === '') {
+                $set('comentarios', DrillHoleSample::LOW_RECOVERY_COMMENT);
+            }
+        }
+    }
+
     public static function evaluateSampleInterval(
         DrillHoleSample $record,
         mixed $fromVal,
         mixed $toVal,
         mixed $recupVal = null,
-        mixed $weightVal = null
+        mixed $weightVal = null,
+        mixed $commentsVal = null
     ): array {
         $result = [
             'is_valid' => true,
@@ -1707,6 +1761,11 @@ class AgileCapture extends Page implements HasForms, HasTable
 
         if ($length > 0 && $recup !== null && $recup > $length + 0.001) {
             $result['errors'][] = "La recuperación ({$recup} m) no puede exceder la longitud del tramo ({$length} m).";
+        } elseif ($length > 0 && DrillHoleSample::isLowRecovery($length, $recup)) {
+            $comments = is_string($commentsVal) ? trim($commentsVal) : '';
+            if ($comments === '') {
+                $result['errors'][] = "Baja recuperación detectada (Recuperación {$recup} m < Longitud {$length} m): el campo Comentarios no puede estar vacío (ej. 'baja recuperacion').";
+            }
         }
 
         $barreno = $record->barreno ?: DrillHole::find($record->barreno_id);

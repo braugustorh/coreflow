@@ -174,6 +174,16 @@ class SampleValidationService
                         $errors[] = "Recuperación ({$sample->sample_length}) no puede ser mayor a la Longitud ({$sample->length}).";
                     }
 
+                    // Regla: baja recuperación (sample_length < length) requiere comentarios no vacíos
+                    if (!$isControl && \App\Models\DrillHoleSample::isLowRecovery(
+                        $sample->length        !== null ? (float) $sample->length : null,
+                        $sample->sample_length !== null ? (float) $sample->sample_length : null
+                    )) {
+                        if (trim((string) $sample->comentarios) === '') {
+                            $errors[] = "Baja recuperación detectada (Recuperación {$sample->sample_length} < Longitud {$sample->length}): el campo Comentarios no puede estar vacío.";
+                        }
+                    }
+
                     // Regla c: Si sample_type == 'O', from_depth y to_depth son obligatorios
                     if (strtoupper(trim((string) $sample->sample_type)) === 'O') {
                         if ($sample->from_depth === null || $sample->to_depth === null) {

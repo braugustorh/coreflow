@@ -13,6 +13,13 @@ use App\Observers\DrillHoleSampleObserver;
 class DrillHoleSample extends Model
 {
     public const QC_PHOTOS_REQUIRED = 2;
+
+    /** Texto estándar (sin acentos) para el comentario automático de baja recuperación. */
+    public const LOW_RECOVERY_COMMENT = 'baja recuperacion';
+
+    /** Tolerancia numérica usada en comparaciones de recuperación vs longitud. */
+    public const LOW_RECOVERY_TOLERANCE = 0.001;
+
     protected $guarded = [];
 
     protected $casts = [
@@ -88,6 +95,62 @@ class DrillHoleSample extends Model
         $count = $this->qc_photos_count ?? $this->qcPhotos()->count();
 
         return $count >= self::QC_PHOTOS_REQUIRED;
+    }
+
+    // ─── Baja Recuperación (Sample Length < Length) ─────────────────────────
+
+    /**
+     * Determina si una combinación longitud/recuperación corresponde a "baja recuperación".
+     * Se excluye explícitamente sample_length <= 0 (cubierto por otra validación: "debe ser > 0").
+     */
+    public static function isLowRecovery(?float $length, ?float $sampleLength): bool
+    {
+        if ($length === null || $sampleLength === null) {
+            return false;
+        }
+        if ($sampleLength <= 0) {
+            return false;
+        }
+
+        return $sampleLength < ($length - self::LOW_RECOVERY_TOLERANCE);
+    }
+
+    /**
+     * Evalúa la baja recuperación usando los valores actuales del registro.
+     */
+    public function hasLowRecovery(): bool
+    {
+        if (strtoupper(trim((string) $this->sample_type)) === 'CONTROL') {
+            return false;
+        }
+
+        return static::isLowRecovery(
+            $this->length !== null ? (float) $this->length : null,
+            $this->sample_length !== null ? (float) $this->sample_length : null
+        );
+    }
+
+    /**
+     * True si la muestra tiene baja recuperación y el campo de comentarios está vacío.
+     */
+    public function needsLowRecoveryComment(): bool
+    {
+        return $this->hasLowRecovery() && trim((string) $this->comentarios) === '';
+    }
+
+    /**
+     * Scope: muestras originales con baja recuperación (sample_length < length) y comentarios vacíos.
+     */
+    public function scopeLowRecoveryMissingComment(Builder $query): Builder
+    {
+        return $query->whereRaw("UPPER(TRIM(sample_type)) != 'CONTROL'")
+            ->whereNotNull('sample_length')
+            ->whereNotNull('length')
+            ->where('sample_length', '>', 0)
+            ->whereRaw('sample_length < (length - ' . self::LOW_RECOVERY_TOLERANCE . ')')
+            ->where(function ($q) {
+                $q->whereNull('comentarios')->orWhereRaw("TRIM(comentarios) = ''");
+            });
     }
 
     // ─── Scopes ──────────────────────────────────────────────────────────────

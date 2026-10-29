@@ -18,6 +18,7 @@ use Filament\Actions\DeleteAction;
 use Filament\Tables\Table;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
+use Filament\Notifications\Notification;
 use Illuminate\Database\Eloquent\Builder;
 
 class DrillHoleSampleResource extends Resource
@@ -55,18 +56,55 @@ class DrillHoleSampleResource extends Resource
                         ->required()
                         ->maxLength(50)
                         ->disabled(fn(?DrillHoleSample $record): bool => $record?->isSent() ?? false)
+                        ->live(onBlur: true)
                         ->rules([
                             fn (Get $get, ?DrillHoleSample $record) => function (string $attribute, $value, \Closure $fail) use ($get, $record) {
-                                $proyectoId = $record?->proyecto_id ?? $get('proyecto_id');
-                                if ($value && $proyectoId) {
-                                    $existsHist = \App\Models\HistoricalSample::where('sample_number', $value)
-                                        ->where(function ($q) use ($proyectoId) {
-                                            $q->where('proyecto_id', $proyectoId)->orWhereNull('proyecto_id');
-                                        })
-                                        ->exists();
-                                    if ($existsHist) {
-                                        $fail("El número de muestra '{$value}' ya existe en el registro histórico de muestras.");
-                                    }
+                                $proyectoId = $record?->proyecto_id 
+                                    ?? $record?->barreno?->proyecto_id 
+                                    ?? $get('proyecto_id');
+
+                                if (!$proyectoId && $get('barreno_id')) {
+                                    $proyectoId = \App\Models\DrillHole::where('id', $get('barreno_id'))->value('proyecto_id');
+                                }
+
+                                if (!$value || !$proyectoId) {
+                                    return;
+                                }
+
+                                // 1. Duplicado contra otras muestras del mismo proyecto (drafts u oficiales)
+                                $existsSample = DrillHoleSample::where('proyecto_id', $proyectoId)
+                                    ->where('sample_number', $value)
+                                    ->when($record, fn($q) => $q->where('id', '!=', $record->id))
+                                    ->with('barreno')
+                                    ->first();
+                                if ($existsSample) {
+                                    $nombreBarreno = $existsSample->barreno?->nombre_barreno ?? 'desconocido';
+                                    Notification::make()
+                                        ->title('Número de muestra duplicado')
+                                        ->body("La muestra '{$value}' ya existe en este proyecto (Barreno: {$nombreBarreno}). Por favor asigna un número único.")
+                                        ->danger()
+                                        ->persistent()
+                                        ->send();
+
+                                    $fail("El número de muestra '{$value}' ya existe en este proyecto (Barreno: {$nombreBarreno}). Debe ser único.");
+                                    return;
+                                }
+
+                                // 2. Duplicado contra el registro histórico
+                                $existsHist = \App\Models\HistoricalSample::where('sample_number', $value)
+                                    ->where(function ($q) use ($proyectoId) {
+                                        $q->where('proyecto_id', $proyectoId)->orWhereNull('proyecto_id');
+                                    })
+                                    ->exists();
+                                if ($existsHist) {
+                                    Notification::make()
+                                        ->title('Número de muestra duplicado')
+                                        ->body("La muestra '{$value}' ya existe en el registro histórico de muestras.")
+                                        ->danger()
+                                        ->persistent()
+                                        ->send();
+
+                                    $fail("El número de muestra '{$value}' ya existe en el registro histórico de muestras.");
                                 }
                             },
                         ]),
@@ -116,6 +154,7 @@ class DrillHoleSampleResource extends Resource
                             if ($from > 0 && $to > $from) {
                                 $set('length', round($to - $from, 2));
                             }
+                            static::maybeAutofillLowRecoveryComment($get, $set);
                         }),
 
                     Forms\Components\TextInput::make('length')
@@ -132,6 +171,10 @@ class DrillHoleSampleResource extends Resource
                         ->step(0.01)
                         ->minValue(0)
                         ->disabled(fn(?DrillHoleSample $record): bool => $record?->isSent() ?? false)
+                        ->live(debounce: 500)
+                        ->afterStateUpdated(function (Get $get, Set $set) {
+                            static::maybeAutofillLowRecoveryComment($get, $set);
+                        })
                         ->hidden(fn(Get $get) => strtoupper(trim((string) $get('sample_type'))) === 'CONTROL'),
 
                     Forms\Components\TextInput::make('weight')
@@ -238,9 +281,44 @@ class DrillHoleSampleResource extends Resource
                         ->label('Comentarios')
                         ->rows(2)
                         ->disabled(fn(?DrillHoleSample $record): bool => $record?->isSent() ?? false)
+                        ->required(function (Get $get, ?DrillHoleSample $record) {
+                            if (!$record || strtoupper(trim((string) $record->sample_type)) === 'CONTROL') return false;
+                            $from = is_numeric($get('from_depth')) ? (float) $get('from_depth') : null;
+                            $to = is_numeric($get('to_depth')) ? (float) $get('to_depth') : null;
+                            $sl = is_numeric($get('sample_length')) ? (float) $get('sample_length') : null;
+                            if ($from === null || $to === null || $to <= $from || $sl === null) return false;
+                            return DrillHoleSample::isLowRecovery(round($to - $from, 2), $sl);
+                        })
+                        ->validationMessages([
+                            'required' => 'Baja recuperación detectada (Recuperación < Longitud): los Comentarios no pueden estar vacíos.',
+                        ])
                         ->columnSpanFull(),
                 ]),
         ];
+    }
+
+    /**
+     * Si from/to/sample_length implican "baja recuperación" y comentarios está vacío,
+     * lo autocompleta con el texto estándar (sin sobrescribir un comentario existente).
+     */
+    public static function maybeAutofillLowRecoveryComment(Get $get, Set $set): void
+    {
+        $from = is_numeric($get('from_depth')) ? (float) $get('from_depth') : null;
+        $to = is_numeric($get('to_depth')) ? (float) $get('to_depth') : null;
+        $sl = is_numeric($get('sample_length')) ? (float) $get('sample_length') : null;
+
+        if ($from === null || $to === null || $to <= $from || $sl === null) {
+            return;
+        }
+
+        $length = round($to - $from, 2);
+
+        if (DrillHoleSample::isLowRecovery($length, $sl)) {
+            $current = (string) ($get('comentarios') ?? '');
+            if (trim($current) === '') {
+                $set('comentarios', DrillHoleSample::LOW_RECOVERY_COMMENT);
+            }
+        }
     }
 
     public static function table(Table $table): Table
@@ -388,6 +466,30 @@ class DrillHoleSampleResource extends Resource
                         ? 'Esta muestra está bloqueada: pertenece a una WO ya enviada al laboratorio.'
                         : null
                     )
+                    ->before(function (\Filament\Actions\EditAction $action, DrillHoleSample $record, array $data) {
+                        $nuevoNumero = trim($data['sample_number'] ?? '');
+                        $proyectoId  = $record->proyecto_id ?? $record->barreno?->proyecto_id;
+
+                        if (!empty($nuevoNumero) && $proyectoId) {
+                            $duplicada = DrillHoleSample::where('proyecto_id', $proyectoId)
+                                ->where('sample_number', $nuevoNumero)
+                                ->where('id', '!=', $record->id)
+                                ->with('barreno')
+                                ->first();
+
+                            if ($duplicada) {
+                                $nombreBarreno = $duplicada->barreno?->nombre_barreno ?? 'desconocido';
+                                Notification::make()
+                                    ->title('Número de muestra duplicado')
+                                    ->body("La muestra '{$nuevoNumero}' ya existe en este proyecto (Barreno: {$nombreBarreno}). Por favor asigna un número único.")
+                                    ->danger()
+                                    ->persistent()
+                                    ->send();
+
+                                $action->halt();
+                            }
+                        }
+                    })
                     ->after(function (DrillHoleSample $record, \App\Services\SampleValidationService $service) {
                         $service->validateDraftsForUser($record->user_id);
                     }),

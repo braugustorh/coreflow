@@ -204,6 +204,7 @@ class ListDrillHoleSamples extends ListRecords
                     // Mapa: sample_number → ID insertado en BD
                     $insertedSampleIds = [];
                     $importedCount     = 0;
+                    $lowRecoveryAutoCount = 0;
 
                     $originalRows = [];
                     $controlRows  = [];
@@ -217,7 +218,7 @@ class ListDrillHoleSamples extends ListRecords
                     }
 
                     // Helper: construye el payload base de una muestra
-                    $buildBase = function (array $row) use ($existingBarrenos, $userId, $sampledAt): array {
+                    $buildBase = function (array $row) use ($existingBarrenos, $userId, $sampledAt, &$lowRecoveryAutoCount): array {
                         $barreno = $existingBarrenos[$row['bhid']];
 
                         // ── Función auxiliar: busca el primer alias encontrado ──────────
@@ -256,6 +257,17 @@ class ListDrillHoleSamples extends ListRecords
                         // Si el CSV tiene FROM y TO pero no DRILLED_LENGTH, calcularlo
                         if ($drilledLen === null && $fromDepth !== null && $toDepth !== null && $toDepth > $fromDepth) {
                             $drilledLen = round($toDepth - $fromDepth, 3);
+                        }
+
+                        // Baja recuperación (sample_length < length): autocompletar comentario si viene vacío
+                        $sampleTypeUpper = strtoupper(trim((string) ($row['sample_type'] ?? 'O')));
+                        if (
+                            $sampleTypeUpper !== 'CONTROL' &&
+                            ($comments === null || trim((string) $comments) === '') &&
+                            \App\Models\DrillHoleSample::isLowRecovery($drilledLen, $sampleLen)
+                        ) {
+                            $comments = \App\Models\DrillHoleSample::LOW_RECOVERY_COMMENT;
+                            $lowRecoveryAutoCount++;
                         }
 
                         return [
@@ -338,6 +350,15 @@ class ListDrillHoleSamples extends ListRecords
                         ->title("{$importedCount} muestras importadas correctamente.")
                         ->success()
                         ->send();
+
+                    if ($lowRecoveryAutoCount > 0) {
+                        Notification::make()
+                            ->title("⚠️ Baja recuperación detectada en {$lowRecoveryAutoCount} muestra(s)")
+                            ->body("Se detectaron muestras con Sample Length < Length cuyo campo Comentarios venía vacío. Se les aplicó automáticamente el comentario 'baja recuperacion'. Revisa la bandeja de borradores para más detalle.")
+                            ->warning()
+                            ->persistent()
+                            ->send();
+                    }
 
                     // ── Validación automática inmediata ─────────────────
                     // Se corre sin esperar que el usuario pulse "Validar"

@@ -219,6 +219,7 @@ class ListDraftDrillHoles extends Page implements HasForms, HasTable
                     $sampledAt = $data['sampled_at'];
                     $insertedSampleIds = [];
                     $importedCount     = 0;
+                    $lowRecoveryAutoCount = 0;
 
                     $originalRows = [];
                     $controlRows  = [];
@@ -231,7 +232,7 @@ class ListDraftDrillHoles extends Page implements HasForms, HasTable
                         }
                     }
 
-                    $buildBase = function (array $row) use ($existingBarrenos, $userId, $sampledAt): array {
+                    $buildBase = function (array $row) use ($existingBarrenos, $userId, $sampledAt, &$lowRecoveryAutoCount): array {
                         $barreno = $existingBarrenos[$row['bhid']];
 
                         $col = function (array $aliases) use ($row): ?float {
@@ -261,6 +262,17 @@ class ListDraftDrillHoles extends Page implements HasForms, HasTable
 
                         if ($drilledLen === null && $fromDepth !== null && $toDepth !== null && $toDepth > $fromDepth) {
                             $drilledLen = round($toDepth - $fromDepth, 3);
+                        }
+
+                        // Baja recuperación (sample_length < length): autocompletar comentario si viene vacío
+                        $sampleTypeUpper = strtoupper(trim((string) ($row['sample_type'] ?? 'O')));
+                        if (
+                            $sampleTypeUpper !== 'CONTROL' &&
+                            ($comments === null || trim((string) $comments) === '') &&
+                            \App\Models\DrillHoleSample::isLowRecovery($drilledLen, $sampleLen)
+                        ) {
+                            $comments = \App\Models\DrillHoleSample::LOW_RECOVERY_COMMENT;
+                            $lowRecoveryAutoCount++;
                         }
 
                         return [
@@ -343,6 +355,15 @@ class ListDraftDrillHoles extends Page implements HasForms, HasTable
                         ->title("{$importedCount} muestras importadas correctamente en la bandeja.")
                         ->success()
                         ->send();
+
+                    if ($lowRecoveryAutoCount > 0) {
+                        Notification::make()
+                            ->title("⚠️ Baja recuperación detectada en {$lowRecoveryAutoCount} muestra(s)")
+                            ->body("Se detectaron muestras con Sample Length < Length cuyo campo Comentarios venía vacío. Se les aplicó automáticamente el comentario 'baja recuperacion'. Revisa la bandeja de borradores para más detalle.")
+                            ->warning()
+                            ->persistent()
+                            ->send();
+                    }
                 }),
         ];
     }

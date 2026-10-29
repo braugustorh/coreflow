@@ -505,6 +505,7 @@ class DrillHolesTable
                                         ->label('Razón de No Muestreo')
                                         ->options([
                                             'Core Loss'                       => 'Core Loss',
+                                            'Overburden'                        => 'Overburden',
                                             'Start of Curve'                  => 'Start of Curve',
                                             'Too Close to Adjacent Drillhole' => 'Too Close to Adjacent Drillhole',
                                         ])
