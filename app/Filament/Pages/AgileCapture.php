@@ -38,6 +38,7 @@ use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\HtmlString;
 use Illuminate\Support\Str;
 use Livewire\Attributes\On;
@@ -1268,6 +1269,143 @@ class AgileCapture extends Page implements HasForms, HasTable
                             ->success()
                             ->send();
                     }),
+                TableAction::make('assignWorkOrderHeader')
+                    ->label('Asignar Work Order')
+                    ->icon('heroicon-o-briefcase')
+                    ->color('info')
+                    ->visible(fn () => (bool) $this->selectedBarrenoId)
+                    ->fillForm(function (): array {
+                        $barrenoId = $this->selectedBarrenoId;
+                        $firstPending = $barrenoId
+                            ? DrillHoleSample::where('barreno_id', $barrenoId)
+                                ->where('is_archived', false)
+                                ->whereNull('work_order_id')
+                                ->orderBy('sample_number', 'asc')
+                                ->value('sample_number')
+                            : null;
+
+                        return [
+                            'scope'        => 'next_batch',
+                            'batch_size'   => 75,
+                            'sample_start' => $firstPending ?? '',
+                            'sample_end'   => '',
+                        ];
+                    })
+                    ->form(function (): array {
+                        $barrenoId = $this->selectedBarrenoId;
+
+                        return [
+                            Select::make('scope')
+                                ->label('Aplicar a')
+                                ->options([
+                                    'next_batch'  => 'Siguiente bloque de N muestras pendientes (sin WO)',
+                                    'range'       => 'Rango de muestras (Muestra Inicio X a Muestra Fin Y)',
+                                    'all_pending' => 'Todas las muestras pendientes (sin WO) del barreno',
+                                    'all'         => 'Todas las muestras guardadas del barreno (incluyendo reasignación)',
+                                    'single'      => 'Muestra única',
+                                ])
+                                ->default('next_batch')
+                                ->live(),
+
+                            TextInput::make('batch_size')
+                                ->label('Cantidad de muestras del bloque (N)')
+                                ->numeric()
+                                ->minValue(1)
+                                ->maxValue(2000)
+                                ->default(75)
+                                ->required(fn(Get $get) => $get('scope') === 'next_batch')
+                                ->hidden(fn(Get $get) => $get('scope') !== 'next_batch')
+                                ->live(debounce: 300),
+
+                            Placeholder::make('batch_preview')
+                                ->label('Vista previa de asignación')
+                                ->hidden(fn(Get $get) => !in_array($get('scope'), ['next_batch', 'all_pending']))
+                                ->content(function (Get $get) use ($barrenoId): HtmlString {
+                                    if (!$barrenoId) {
+                                        return new HtmlString('');
+                                    }
+
+                                    $pendingSamples = DrillHoleSample::where('barreno_id', $barrenoId)
+                                        ->where('is_archived', false)
+                                        ->whereNull('work_order_id')
+                                        ->orderBy('sample_number', 'asc')
+                                        ->get(['id', 'sample_number']);
+
+                                    $totalPending = $pendingSamples->count();
+                                    if ($totalPending === 0) {
+                                        return new HtmlString('<span class="text-xs font-semibold text-emerald-600 dark:text-emerald-400">✓ Todas las muestras de este barreno ya tienen Work Order asignada.</span>');
+                                    }
+
+                                    if ($get('scope') === 'all_pending') {
+                                        $first = e($pendingSamples->first()->sample_number);
+                                        $last  = e($pendingSamples->last()->sample_number);
+                                        return new HtmlString("<span class=\"text-xs text-gray-600 dark:text-gray-300\">Se asignarán las <strong>{$totalPending}</strong> muestras pendientes: desde <strong>{$first}</strong> hasta <strong>{$last}</strong>.</span>");
+                                    }
+
+                                    $n = max(1, (int) ($get('batch_size') ?: 75));
+                                    $slice = $pendingSamples->take($n);
+                                    $count = $slice->count();
+                                    $first = e($slice->first()->sample_number);
+                                    $last  = e($slice->last()->sample_number);
+
+                                    return new HtmlString("<span class=\"text-xs text-gray-600 dark:text-gray-300\">Pendientes sin WO: <strong>{$totalPending}</strong>. Este bloque tomará <strong>{$count}</strong> muestra(s): desde <strong>{$first}</strong> hasta <strong>{$last}</strong>.</span>");
+                                }),
+
+                            TextInput::make('sample_start')
+                                ->label('Muestra Inicio (X)')
+                                ->placeholder('Ej: ML157100')
+                                ->required(fn(Get $get) => in_array($get('scope'), ['range', 'single']))
+                                ->hidden(fn(Get $get) => !in_array($get('scope'), ['range', 'single'])),
+
+                            TextInput::make('sample_end')
+                                ->label('Muestra Fin (Y)')
+                                ->placeholder('Ej: ML157175')
+                                ->required(fn(Get $get) => $get('scope') === 'range')
+                                ->hidden(fn(Get $get) => $get('scope') !== 'range'),
+
+                            $this->getWorkOrderSelectField(),
+                        ];
+                    })
+                    ->modalHeading('Asignar Work Order a Muestras del Barreno')
+                    ->modalDescription('Selecciona el bloque o rango de muestras y la Orden de Trabajo a asignar.')
+                    ->action(function (array $data) {
+                        $barrenoId = $this->selectedBarrenoId;
+                        if (!$barrenoId) return;
+
+                        $baseQuery = DrillHoleSample::where('barreno_id', $barrenoId)
+                            ->where('is_archived', false)
+                            ->whereDoesntHave('workOrder', fn($q) => $q->where('sent_to_lab', true)->orWhereHas('drillHoleSamples', fn($s) => $s->where('is_archived', true)))
+                            ->orderBy('sample_number', 'asc');
+
+                        $scope = $data['scope'] ?? 'next_batch';
+                        $targetIds = [];
+
+                        if ($scope === 'all') {
+                            $targetIds = (clone $baseQuery)->pluck('id')->all();
+                        } elseif ($scope === 'all_pending') {
+                            $targetIds = (clone $baseQuery)->whereNull('work_order_id')->pluck('id')->all();
+                        } elseif ($scope === 'next_batch') {
+                            $n = max(1, (int) ($data['batch_size'] ?? 75));
+                            $targetIds = (clone $baseQuery)
+                                ->whereNull('work_order_id')
+                                ->limit($n)
+                                ->pluck('id')
+                                ->all();
+                        } elseif ($scope === 'single') {
+                            $start = trim((string) ($data['sample_start'] ?? ''));
+                            $targetIds = (clone $baseQuery)
+                                ->where('sample_number', $start)
+                                ->pluck('id')
+                                ->all();
+                        } elseif ($scope === 'range') {
+                            $start = trim((string) ($data['sample_start'] ?? ''));
+                            $end   = trim((string) ($data['sample_end'] ?? ''));
+                            $allSamples = (clone $baseQuery)->get(['id', 'sample_number']);
+                            $targetIds = $this->getSampleIdsInRange($allSamples, $start, $end);
+                        }
+
+                        $this->executeWorkOrderAssignment($targetIds, (int) $data['work_order_id']);
+                    }),
             ])
             ->bulkActions([
                 BulkAction::make('exportExcel')
@@ -1367,156 +1505,196 @@ class AgileCapture extends Page implements HasForms, HasTable
                 BulkAction::make('assignWorkOrder')
                     ->label('Asignar Work Order')
                     ->icon('heroicon-o-briefcase')
-                    ->form(function () {
-                        // Obtener sede del barreno actual de forma directa y optimizada
-                        $sedeId = $this->barreno?->sede_id;
-                        if (!$sedeId && $this->selectedBarrenoId) {
-                            $sedeId = DrillHole::where('id', $this->selectedBarrenoId)->value('sede_id')
-                                ?? DrillHole::where('id', $this->selectedBarrenoId)->with('proyecto')->first()?->proyecto?->sede_id;
-                        }
-
-                        return [
-                            Select::make('work_order_id')
-                                ->label('Work Order')
-                                ->options(function () use ($sedeId) {
-                                    $query = WorkOrder::query()
-                                        ->select(['id', 'work_order_code', 'samples_quantity']);
-
-                                    if ($sedeId) {
-                                        $query->where('sede_id', $sedeId);
-                                    }
-
-                                    // Descartar de inmediato WOs ya enviadas al laboratorio (filtro indexado rápido)
-                                    $query->where(function ($q) {
-                                        $q->where('sent_to_lab', false)->orWhereNull('sent_to_lab');
-                                    });
-
-                                    // Solo WOs que NO tienen muestras archivadas
-                                    $query->whereDoesntHave('drillHoleSamples', fn($q) => $q->where('is_archived', true));
-
-                                    return $query->orderByDesc('id')
-                                        ->get()
-                                        ->mapWithKeys(
-                                            fn($wo) =>
-                                            [$wo->id => "{$wo->work_order_code} (muestras: {$wo->samples_quantity})"]
-                                        );
-                                })
-                                ->searchable()
-                                ->required()
-                                ->createOptionForm([
-                                    TextInput::make('work_order_code')
-                                        ->label('Código de nueva Work Order')
-                                        ->required()
-                                        ->unique('work_orders', 'work_order_code')
-                                        ->placeholder('Ej: WO-2026-001'),
-                                ])
-                                ->createOptionUsing(function (array $data) use ($sedeId) {
-                                    $wo = WorkOrder::create([
-                                        'work_order_code' => trim($data['work_order_code']),
-                                        'sede_id' => $sedeId,
-                                        'samples_quantity' => 0,
-                                    ]);
-                                    return $wo->id;
-                                }),
-                        ];
-                    })
+                    ->form(fn () => [
+                        $this->getWorkOrderSelectField(),
+                    ])
                     ->action(function (Collection $records, array $data) {
-                        // Verificar que ninguna muestra seleccionada pertenezca a una WO ya enviada
-                        $hasLockedSamples = $records->contains(function (DrillHoleSample $s) {
-                            return $s->is_archived || ($s->workOrder?->isSent() ?? false);
-                        });
-
-                        if ($hasLockedSamples) {
-                            \Filament\Notifications\Notification::make()
-                                ->title('Operación no permitida')
-                                ->body('Una o más muestras seleccionadas ya pertenecen a una Work Order enviada al laboratorio y no pueden reasignarse.')
-                                ->danger()
-                                ->send();
-                            return;
-                        }
-
-                        $barrenoId = $this->selectedBarrenoId;
-                        $workOrder = WorkOrder::find($data['work_order_id']);
-
-                        if (!$workOrder) {
-                            \Filament\Notifications\Notification::make()
-                                ->title('Work Order no encontrada')
-                                ->danger()
-                                ->send();
-                            return;
-                        }
-
-                        // Verificar que la WO destino no esté enviada al laboratorio
-                        if ($workOrder->isSent()) {
-                            \Filament\Notifications\Notification::make()
-                                ->title('Work Order bloqueada')
-                                ->body("La Work Order {$workOrder->work_order_code} ya fue enviada al laboratorio y no puede recibir más muestras.")
-                                ->danger()
-                                ->send();
-                            return;
-                        }
-
-                        // Si tiene muestras, verificar que todas sean del mismo barreno
-                        if ($workOrder->samples_quantity > 0) {
-                            $allSameBarreno = DrillHoleSample::where('work_order_id', $workOrder->id)
-                                ->where('barreno_id', '!=', $barrenoId)
-                                ->doesntExist();
-
-                            if (!$allSameBarreno) {
-                                \Filament\Notifications\Notification::make()
-                                    ->title('Work Order no disponible')
-                                    ->body("Esta Work Order ya tiene muestras de otros barrenos.")
-                                    ->warning()
-                                    ->send();
-                                return;
-                            }
-                        }
-
-                        // Validar que todas las muestras seleccionadas tengan Core Size capturado
-                        $samplesWithoutCoreSize = $records->filter(function ($sample) {
-                            $cs = $sample->core_size ?: $sample->barreno?->core_size;
-                            return empty($cs);
-                        });
-
-                        if ($samplesWithoutCoreSize->isNotEmpty()) {
-                            $count = $samplesWithoutCoreSize->count();
-                            $sampleNumbers = $samplesWithoutCoreSize->pluck('sample_number')->take(5)->implode(', ');
-                            \Filament\Notifications\Notification::make()
-                                ->title('Core Size requerido')
-                                ->body("No se puede asignar la Work Order porque {$count} muestra(s) no tienen Core Size asignado ({$sampleNumbers}...). Por favor asigna el Core Size antes de continuar.")
-                                ->danger()
-                                ->send();
-                            return;
-                        }
-
-                        // Guardar las WOs anteriores para recalcular
-                        $previousWoIds = $records->pluck('work_order_id')
-                            ->filter()
-                            ->unique()
-                            ->values();
-
-                        // 1 solo query batch para asignar la nueva WO a todas las muestras seleccionadas
                         $targetIds = $records->pluck('id')->all();
-                        DrillHoleSample::whereIn('id', $targetIds)
-                            ->update(['work_order_id' => $workOrder->id]);
-
-                        // Recalcular conteo de WOs afectadas (anteriores + nueva) con 1 query por WO afectada
-                        $affectedWoIds = $previousWoIds->push($workOrder->id)->unique()->filter()->values();
-                        foreach ($affectedWoIds as $woIdToUpdate) {
-                            $this->recalcularWO($woIdToUpdate);
-                        }
-
-                        $this->cachedBarrenoMetrics = null;
-                        $this->flushCachedTableRecords();
-                        $this->resetPage();
-
-                        \Filament\Notifications\Notification::make()
-                            ->title('Work Order asignada')
-                            ->body("La orden {$workOrder->work_order_code} fue asignada a {$records->count()} muestras.")
-                            ->success()
-                            ->send();
-                    }),
+                        $this->executeWorkOrderAssignment($targetIds, (int) $data['work_order_id']);
+                    })
+                    ->deselectRecordsAfterCompletion(),
             ]);
+    }
+
+    protected function getWorkOrderSelectField(): Select
+    {
+        $sedeId = $this->barreno?->sede_id;
+        if (!$sedeId && $this->selectedBarrenoId) {
+            $sedeId = DrillHole::where('id', $this->selectedBarrenoId)->value('sede_id')
+                ?? DrillHole::where('id', $this->selectedBarrenoId)->with('proyecto')->first()?->proyecto?->sede_id;
+        }
+        $barrenoId = $this->selectedBarrenoId;
+
+        return Select::make('work_order_id')
+            ->label('Work Order')
+            ->options(function () use ($sedeId, $barrenoId) {
+                $query = WorkOrder::query()
+                    ->select(['id', 'work_order_code', 'samples_quantity']);
+
+                if ($sedeId) {
+                    $query->where('sede_id', $sedeId);
+                }
+
+                // Descartar de inmediato WOs ya enviadas al laboratorio (filtro indexado rápido)
+                $query->where(function ($q) {
+                    $q->where('sent_to_lab', false)->orWhereNull('sent_to_lab');
+                });
+
+                // Solo WOs que NO tienen muestras archivadas
+                $query->whereDoesntHave('drillHoleSamples', fn($q) => $q->where('is_archived', true));
+
+                // Solo mostrar WOs vacías o que pertenezcan a este mismo barreno
+                if ($barrenoId) {
+                    $query->whereDoesntHave('drillHoleSamples', fn($q) => $q->where('barreno_id', '!=', $barrenoId));
+                }
+
+                return $query->orderByDesc('id')
+                    ->get()
+                    ->mapWithKeys(
+                        fn($wo) => [$wo->id => "{$wo->work_order_code} (muestras: {$wo->samples_quantity})"]
+                    );
+            })
+            ->searchable()
+            ->required()
+            ->createOptionForm([
+                TextInput::make('work_order_code')
+                    ->label('Código de nueva Work Order (6 dígitos)')
+                    ->required()
+                    ->numeric()
+                    ->length(6)
+                    ->rules(['digits:6'])
+                    ->unique('work_orders', 'work_order_code')
+                    ->placeholder('Ej: 260801'),
+            ])
+            ->createOptionUsing(function (array $data) use ($sedeId) {
+                $wo = WorkOrder::create([
+                    'work_order_code'  => trim($data['work_order_code']),
+                    'sede_id'          => $sedeId,
+                    'samples_quantity' => 0,
+                ]);
+                return $wo->id;
+            });
+    }
+
+    protected function executeWorkOrderAssignment(array $targetIds, int $workOrderId): void
+    {
+        $barrenoId = $this->selectedBarrenoId;
+        $targetIds = array_values(array_unique(array_filter($targetIds)));
+
+        if (empty($targetIds)) {
+            \Filament\Notifications\Notification::make()
+                ->title('Sin muestras coincidentes')
+                ->body('No se encontraron muestras en el criterio o rango indicado.')
+                ->warning()
+                ->send();
+            return;
+        }
+
+        // 1. Verificar en 1 consulta que ninguna muestra seleccionada pertenezca a una WO ya enviada
+        $hasLockedSamples = DrillHoleSample::whereIn('id', $targetIds)
+            ->where(function ($q) {
+                $q->where('is_archived', true)
+                  ->orWhereHas('workOrder', fn($wq) => $wq->where('sent_to_lab', true));
+            })
+            ->exists();
+
+        if ($hasLockedSamples) {
+            \Filament\Notifications\Notification::make()
+                ->title('Operación no permitida')
+                ->body('Una o más muestras seleccionadas ya pertenecen a una Work Order enviada al laboratorio y no pueden reasignarse.')
+                ->danger()
+                ->send();
+            return;
+        }
+
+        $workOrder = WorkOrder::find($workOrderId);
+
+        if (!$workOrder) {
+            \Filament\Notifications\Notification::make()
+                ->title('Work Order no encontrada')
+                ->danger()
+                ->send();
+            return;
+        }
+
+        // 2. Verificar que la WO destino no esté enviada al laboratorio
+        if ($workOrder->isSent()) {
+            \Filament\Notifications\Notification::make()
+                ->title('Work Order bloqueada')
+                ->body("La Work Order {$workOrder->work_order_code} ya fue enviada al laboratorio y no puede recibir más muestras.")
+                ->danger()
+                ->send();
+            return;
+        }
+
+        // 3. Si tiene muestras, verificar que todas sean del mismo barreno
+        if ($workOrder->samples_quantity > 0 && $barrenoId) {
+            $allSameBarreno = DrillHoleSample::where('work_order_id', $workOrder->id)
+                ->where('barreno_id', '!=', $barrenoId)
+                ->doesntExist();
+
+            if (!$allSameBarreno) {
+                \Filament\Notifications\Notification::make()
+                    ->title('Work Order no disponible')
+                    ->body('Esta Work Order ya tiene muestras de otros barrenos.')
+                    ->warning()
+                    ->send();
+                return;
+            }
+        }
+
+        // 4. Validar en 1 consulta que todas las muestras seleccionadas tengan Core Size capturado
+        $barrenoCoreSize = $this->barreno?->core_size
+            ?? ($barrenoId ? DrillHole::where('id', $barrenoId)->value('core_size') : null);
+
+        if (empty($barrenoCoreSize)) {
+            $missingCoreSizeQuery = DrillHoleSample::whereIn('id', $targetIds)
+                ->where(function ($q) {
+                    $q->whereNull('core_size')->orWhere('core_size', '');
+                });
+
+            $missingCount = (clone $missingCoreSizeQuery)->count();
+            if ($missingCount > 0) {
+                $sampleNumbers = (clone $missingCoreSizeQuery)
+                    ->orderBy('sample_number', 'asc')
+                    ->limit(5)
+                    ->pluck('sample_number')
+                    ->implode(', ');
+
+                \Filament\Notifications\Notification::make()
+                    ->title('Core Size requerido')
+                    ->body("No se puede asignar la Work Order porque {$missingCount} muestra(s) no tienen Core Size asignado ({$sampleNumbers}...). Por favor asigna el Core Size antes de continuar.")
+                    ->danger()
+                    ->send();
+                return;
+            }
+        }
+
+        // 5. Actualización masiva atómica y recálculo de conteos
+        DB::transaction(function () use ($targetIds, $workOrder) {
+            $previousWoIds = DrillHoleSample::whereIn('id', $targetIds)
+                ->whereNotNull('work_order_id')
+                ->distinct()
+                ->pluck('work_order_id');
+
+            DrillHoleSample::whereIn('id', $targetIds)
+                ->update(['work_order_id' => $workOrder->id]);
+
+            $affectedWoIds = $previousWoIds->push($workOrder->id)->unique()->filter()->values();
+            foreach ($affectedWoIds as $woIdToUpdate) {
+                $this->recalcularWO((int) $woIdToUpdate);
+            }
+        });
+
+        $this->cachedBarrenoMetrics = null;
+        $this->flushCachedTableRecords();
+
+        $assignedCount = count($targetIds);
+        \Filament\Notifications\Notification::make()
+            ->title('Work Order asignada')
+            ->body("La orden {$workOrder->work_order_code} fue asignada a {$assignedCount} muestras.")
+            ->success()
+            ->send();
     }
 
     /**

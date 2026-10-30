@@ -520,34 +520,48 @@ class DrillHoleSampleResource extends Resource
                         ->color('info')
                         ->form(function (\Illuminate\Support\Collection $records) {
                             $sedeId = null;
+                            $barrenoId = null;
                             $firstRecord = $records->first();
                             if ($firstRecord) {
-                                $sedeId = $firstRecord->proyecto?->sede_id;
+                                $sedeId = $firstRecord->proyecto?->sede_id ?? $firstRecord->barreno?->sede_id;
+                                $barrenoId = $firstRecord->barreno_id;
                             }
 
                             return [
                                 Forms\Components\Select::make('work_order_id')
                                     ->label('Work Order')
-                                    ->options(function () use ($sedeId) {
-                                        $query = WorkOrder::query();
+                                    ->options(function () use ($sedeId, $barrenoId) {
+                                        $query = WorkOrder::query()
+                                            ->select(['id', 'work_order_code', 'samples_quantity']);
                                         if ($sedeId) {
                                             $query->where('sede_id', $sedeId);
                                         }
+                                        $query->where(function ($q) {
+                                            $q->where('sent_to_lab', false)->orWhereNull('sent_to_lab');
+                                        });
                                         // Only show WOs that have NOT been sent to the lab
                                         $query->whereDoesntHave('drillHoleSamples', fn($q) => $q->where('is_archived', true));
-                                        return $query->get()->mapWithKeys(
-                                            fn($wo) =>
-                                            [$wo->id => "{$wo->work_order_code} (muestras: {$wo->samples_quantity})"]
-                                        );
+                                        if ($barrenoId) {
+                                            $query->whereDoesntHave('drillHoleSamples', fn($q) => $q->where('barreno_id', '!=', $barrenoId));
+                                        }
+                                        return $query->orderByDesc('id')
+                                            ->get()
+                                            ->mapWithKeys(
+                                                fn($wo) =>
+                                                [$wo->id => "{$wo->work_order_code} (muestras: {$wo->samples_quantity})"]
+                                            );
                                     })
                                     ->searchable()
                                     ->required()
                                     ->createOptionForm([
                                         Forms\Components\TextInput::make('work_order_code')
-                                            ->label('Código de nueva Work Order')
+                                            ->label('Código de nueva Work Order (6 dígitos)')
                                             ->required()
+                                            ->numeric()
+                                            ->length(6)
+                                            ->rules(['digits:6'])
                                             ->unique('work_orders', 'work_order_code')
-                                            ->placeholder('Ej: WO-2026-001'),
+                                            ->placeholder('Ej: 260801'),
                                     ])
                                     ->createOptionUsing(function (array $data) use ($sedeId) {
                                         $wo = WorkOrder::create([
@@ -559,12 +573,21 @@ class DrillHoleSampleResource extends Resource
                                     }),
                             ];
                         })
-                        ->action(function (\Illuminate\Support\Collection $records, array $data, \App\Services\SampleValidationService $service) {
-                            // Verificar que ninguna de las muestras seleccionadas pertenezca a una WO ya enviada
-                            $lockedSamples = $records->filter(
-                                fn(DrillHoleSample $s) => $s->workOrder?->isSent() ?? false
-                            );
-                            if ($lockedSamples->isNotEmpty()) {
+                        ->action(function (\Illuminate\Support\Collection $records, array $data) {
+                            $targetIds = $records->pluck('id')->all();
+                            if (empty($targetIds)) {
+                                return;
+                            }
+
+                            // Verificar en 1 consulta que ninguna de las muestras seleccionadas pertenezca a una WO ya enviada
+                            $hasLockedSamples = DrillHoleSample::whereIn('id', $targetIds)
+                                ->where(function ($q) {
+                                    $q->where('is_archived', true)
+                                      ->orWhereHas('workOrder', fn($wq) => $wq->where('sent_to_lab', true));
+                                })
+                                ->exists();
+
+                            if ($hasLockedSamples) {
                                 \Filament\Notifications\Notification::make()
                                     ->title('Operación no permitida')
                                     ->body('Una o más muestras seleccionadas ya pertenecen a una Work Order enviada al laboratorio y no pueden reasignarse.')
@@ -620,59 +643,56 @@ class DrillHoleSampleResource extends Resource
                                 }
                             }
 
-                            // Validar que todas las muestras seleccionadas tengan Core Size capturado
-                            $samplesWithoutCoreSize = $records->filter(function ($sample) {
-                                $cs = $sample->core_size ?: $sample->barreno?->core_size;
-                                return empty($cs);
+                            // Validar en 1 consulta que todas las muestras seleccionadas tengan Core Size capturado
+                            $barrenoCoreSize = $barrenoId
+                                ? \App\Models\DrillHole::where('id', $barrenoId)->value('core_size')
+                                : null;
+
+                            if (empty($barrenoCoreSize)) {
+                                $missingCoreSizeQuery = DrillHoleSample::whereIn('id', $targetIds)
+                                    ->where(function ($q) {
+                                        $q->whereNull('core_size')->orWhere('core_size', '');
+                                    });
+
+                                $missingCount = (clone $missingCoreSizeQuery)->count();
+                                if ($missingCount > 0) {
+                                    $sampleNumbers = (clone $missingCoreSizeQuery)
+                                        ->orderBy('sample_number', 'asc')
+                                        ->limit(5)
+                                        ->pluck('sample_number')
+                                        ->implode(', ');
+                                    \Filament\Notifications\Notification::make()
+                                        ->title('Core Size requerido')
+                                        ->body("No se puede asignar la Work Order porque {$missingCount} muestra(s) no tienen Core Size asignado ({$sampleNumbers}...). Por favor asigna el Core Size antes de continuar.")
+                                        ->danger()
+                                        ->send();
+                                    return;
+                                }
+                            }
+
+                            \Illuminate\Support\Facades\DB::transaction(function () use ($targetIds, $workOrder) {
+                                $previousWoIds = DrillHoleSample::whereIn('id', $targetIds)
+                                    ->whereNotNull('work_order_id')
+                                    ->distinct()
+                                    ->pluck('work_order_id');
+
+                                DrillHoleSample::whereIn('id', $targetIds)
+                                    ->update(['work_order_id' => $workOrder->id]);
+
+                                $affectedWoIds = $previousWoIds->push($workOrder->id)->unique()->filter()->values();
+                                foreach ($affectedWoIds as $woIdToUpdate) {
+                                    $count = DrillHoleSample::where('work_order_id', $woIdToUpdate)->count();
+                                    WorkOrder::where('id', $woIdToUpdate)->update(['samples_quantity' => $count]);
+                                }
                             });
-
-                            if ($samplesWithoutCoreSize->isNotEmpty()) {
-                                $count = $samplesWithoutCoreSize->count();
-                                $sampleNumbers = $samplesWithoutCoreSize->pluck('sample_number')->take(5)->implode(', ');
-                                \Filament\Notifications\Notification::make()
-                                    ->title('Core Size requerido')
-                                    ->body("No se puede asignar la Work Order porque {$count} muestra(s) no tienen Core Size asignado ({$sampleNumbers}...). Por favor asigna el Core Size antes de continuar.")
-                                    ->danger()
-                                    ->send();
-                                return;
-                            }
-
-                            // Guardar las WOs anteriores para recalcular
-                            $previousWoIds = $records->pluck('work_order_id')
-                                ->filter()
-                                ->unique()
-                                ->values();
-
-                            // Asignar la nueva WO a todas las muestras seleccionadas
-                            foreach ($records as $record) {
-                                $record->update(['work_order_id' => $workOrder->id]);
-                            }
-
-                            // Recalcular conteo de WOs anteriores afectadas
-                            foreach ($previousWoIds as $prevWoId) {
-                                if ($prevWoId === $workOrder->id) {
-                                    continue;
-                                }
-                                $wo = WorkOrder::find($prevWoId);
-                                if ($wo) {
-                                    $wo->samples_quantity = DrillHoleSample::where('work_order_id', $prevWoId)->count();
-                                    $wo->save();
-                                }
-                            }
-
-                            // Recalcular conteo de la WO nueva/seleccionada
-                            $workOrder->samples_quantity = DrillHoleSample::where('work_order_id', $workOrder->id)->count();
-                            $workOrder->save();
-
-                            // Re-validar todo automáticamente para limpiar errores de Work Order
-                            $service->validateDraftsForUser(auth()->id());
 
                             \Filament\Notifications\Notification::make()
                                 ->title('Work Order asignada')
-                                ->body("La orden {$workOrder->work_order_code} fue asignada a {$records->count()} muestras.")
+                                ->body("La orden {$workOrder->work_order_code} fue asignada a " . count($targetIds) . " muestras.")
                                 ->success()
                                 ->send();
-                        }),
+                        })
+                        ->deselectRecordsAfterCompletion(),
                     DeleteBulkAction::make()
                         ->before(function (\Illuminate\Support\Collection $records, \Filament\Actions\DeleteBulkAction $action) {
                             $locked = $records->filter(fn(DrillHoleSample $s) => $s->isSent());

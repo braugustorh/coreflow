@@ -137,6 +137,69 @@ class SampleValidationService
                     }
                 }
 
+                // Precargar configuración de pesos y catálogos de unicidad en bloque (evita N+1 en barrenos de 750+ muestras)
+                $settings = \App\Models\SampleSetting::getSettings();
+                $minSampleWeight = (float) ($settings->min_sample_weight ?? 0.50);
+                $maxSampleWeight = (float) ($settings->max_sample_weight ?? 15.00);
+
+                $barrenoSampleNumbers = $samples->pluck('sample_number')
+                    ->filter(fn($n) => !empty($n))
+                    ->unique()
+                    ->values()
+                    ->all();
+
+                $proyectoIds = $samples->pluck('proyecto_id')->filter()->unique()->values()->all();
+                $officialByProyecto   = [];
+                $historicalByProyecto = [];
+                $otherDraftsByProyecto = [];
+
+                if (!empty($barrenoSampleNumbers) && !empty($proyectoIds)) {
+                    foreach ($proyectoIds as $pId) {
+                        $officialMatches = [];
+                        $historicalMatches = [];
+                        $otherDraftMatches = collect();
+
+                        foreach (array_chunk($barrenoSampleNumbers, 500) as $chunkNums) {
+                            $off = DrillHoleSample::where('status', 'official')
+                                ->where('proyecto_id', $pId)
+                                ->whereIn('sample_number', $chunkNums)
+                                ->pluck('sample_number')
+                                ->all();
+                            foreach ($off as $num) {
+                                $officialMatches[$num] = true;
+                            }
+
+                            $hist = \App\Models\HistoricalSample::whereIn('sample_number', $chunkNums)
+                                ->where(function ($q) use ($pId) {
+                                    $q->where('proyecto_id', $pId)
+                                      ->orWhereNull('proyecto_id');
+                                })
+                                ->pluck('sample_number')
+                                ->all();
+                            foreach ($hist as $num) {
+                                $historicalMatches[$num] = true;
+                            }
+
+                            $draftsChunk = DrillHoleSample::where('status', 'draft')
+                                ->where('capture_source', 'import')
+                                ->where('proyecto_id', $pId)
+                                ->where('barreno_id', '!=', $barrenoId)
+                                ->whereIn('sample_number', $chunkNums)
+                                ->with(['user', 'barreno'])
+                                ->get();
+                            foreach ($draftsChunk as $dSample) {
+                                if (!$otherDraftMatches->has($dSample->sample_number)) {
+                                    $otherDraftMatches->put($dSample->sample_number, $dSample);
+                                }
+                            }
+                        }
+
+                        $officialByProyecto[$pId]    = $officialMatches;
+                        $historicalByProyecto[$pId]  = $historicalMatches;
+                        $otherDraftsByProyecto[$pId] = $otherDraftMatches;
+                    }
+                }
+
                 // Validar cada muestra del barreno
                 foreach ($samples as $sample) {
                     $errors = [];
@@ -206,8 +269,6 @@ class SampleValidationService
                             $errors[] = 'El peso (Weight) está vacío.';
                         } else {
                             $w = (float) $sample->weight;
-                            $minSampleWeight = (float) (\App\Models\SampleSetting::getSettings()->min_sample_weight ?? 0.50);
-                            $maxSampleWeight = (float) (\App\Models\SampleSetting::getSettings()->max_sample_weight ?? 15.00);
 
                             if ($w < $minSampleWeight) {
                                 $errors[] = "El peso ({$w} kg) es inferior al mínimo permitido ({$minSampleWeight} kg).";
@@ -231,33 +292,20 @@ class SampleValidationService
 
                     // Regla h: sample_number único en registros ya oficiales del proyecto y en el histórico
                     if (!empty($sample->sample_number) && $sample->proyecto_id) {
-                        $existsInProject = DrillHoleSample::where('status', 'official')
-                            ->where('proyecto_id', $sample->proyecto_id)
-                            ->where('sample_number', $sample->sample_number)
-                            ->exists();
-                        if ($existsInProject) {
+                        $pId   = $sample->proyecto_id;
+                        $sNum  = $sample->sample_number;
+
+                        if (!empty($officialByProyecto[$pId][$sNum])) {
                             $errors[] = 'El número de muestra ya existe en registros oficiales de este proyecto.';
                         }
 
-                        // Verificación en registros históricos
-                        $existsInHistorical = \App\Models\HistoricalSample::where('sample_number', $sample->sample_number)
-                            ->where(function ($q) use ($sample) {
-                                $q->where('proyecto_id', $sample->proyecto_id)
-                                  ->orWhereNull('proyecto_id');
-                            })
-                            ->exists();
-                        if ($existsInHistorical) {
+                        if (!empty($historicalByProyecto[$pId][$sNum])) {
                             $errors[] = 'El número de muestra ya existe en el registro histórico de muestras.';
                         }
 
-                        // Verificación cruzada: Si ya existe en otro borrador activo de otro barreno en el mismo proyecto
-                        $existsInOtherDraft = DrillHoleSample::where('status', 'draft')
-                            ->where('capture_source', 'import')
-                            ->where('proyecto_id', $sample->proyecto_id)
-                            ->where('barreno_id', '!=', $sample->barreno_id)
-                            ->where('sample_number', $sample->sample_number)
-                            ->with(['user', 'barreno'])
-                            ->first();
+                        $existsInOtherDraft = isset($otherDraftsByProyecto[$pId])
+                            ? $otherDraftsByProyecto[$pId]->get($sNum)
+                            : null;
 
                         if ($existsInOtherDraft) {
                             $uploaderName = $existsInOtherDraft->user?->name ?? 'otro usuario';
@@ -266,9 +314,12 @@ class SampleValidationService
                         }
                     }
 
-                    // Guardar errores (null = sin errores = válido)
-                    $sample->errors = count($errors) > 0 ? $errors : null;
-                    $sample->save();
+                    // Guardar errores (null = sin errores = válido) solo si hubo cambio real
+                    $newErrors = count($errors) > 0 ? $errors : null;
+                    if ($sample->errors !== $newErrors) {
+                        $sample->errors = $newErrors;
+                        DrillHoleSample::withoutEvents(fn () => $sample->save());
+                    }
                 }
             }
         });
