@@ -617,7 +617,7 @@ class AgileCapture extends Page implements HasForms, HasTable
         $query = DrillHoleSample::query()
             ->whereIn('id', $records->pluck('id'))
             ->orderBy('sample_number', 'asc')
-            ->with(['standardSample', 'workOrder', 'barreno'])
+            ->with(['standardSample', 'duplicateSample', 'workOrder', 'barreno'])
             ->withCount('qcPhotos');
 
         return response()->streamDownload(function () use ($query) {
@@ -635,6 +635,8 @@ class AgileCapture extends Page implements HasForms, HasTable
                     $controlType = $s->control_type;
                     if (in_array($controlType, ['Standard', 'Estándar'], true) && $s->standardSample) {
                         $controlType = 'STD-' . $s->standardSample->standard_name;
+                    } elseif (str_contains(strtoupper((string)$controlType), 'DUP') && $s->duplicateSample) {
+                        $controlType = 'DUP (' . $s->duplicateSample->sample_number . ')';
                     }
 
                     $photos = $s->requiresQcPhotos()
@@ -671,7 +673,7 @@ class AgileCapture extends Page implements HasForms, HasTable
         return $table
             ->query(
                 fn() => DrillHoleSample::query()
-                    ->with(['standardSample', 'qcPhotos', 'workOrder', 'barreno'])
+                    ->with(['standardSample', 'duplicateSample', 'qcPhotos', 'workOrder', 'barreno'])
                     ->withCount('qcPhotos')
                     ->where('barreno_id', $this->selectedBarrenoId ?? -1)
                     ->orderBy('sample_number', 'asc')
@@ -711,10 +713,23 @@ class AgileCapture extends Page implements HasForms, HasTable
                 TextColumn::make('control_type')
                     ->label('Control Type')
                     ->badge()
-                    ->color(fn($state) => ($state && str_starts_with($state, 'STD-')) ? 'info' : 'gray')
-                    ->formatStateUsing(function ($state, $record) {
-                        if (($state === 'Standard' || $state === 'Estándar') && $record->standardSample) {
+                    ->color(function ($state, DrillHoleSample $record) {
+                        if (!$state && !$record->standard_sample_id && !$record->duplicate_sample_id) return 'gray';
+                        $u = strtoupper((string) $state);
+                        if (str_contains($u, 'STAND') || str_starts_with((string)$state, 'STD-') || $record->standard_sample_id) {
+                            return 'info';
+                        }
+                        if (str_contains($u, 'DUP') || $record->duplicate_sample_id) {
+                            return 'warning';
+                        }
+                        return 'gray';
+                    })
+                    ->formatStateUsing(function ($state, DrillHoleSample $record) {
+                        if (($state === 'Standard' || $state === 'Estándar' || $record->standard_sample_id) && $record->standardSample) {
                             return 'STD-' . $record->standardSample->standard_name;
+                        }
+                        if (str_contains(strtoupper((string)$state), 'DUP') && $record->duplicateSample) {
+                            return 'DUP (' . $record->duplicateSample->sample_number . ')';
                         }
                         return $state;
                     })
@@ -968,6 +983,7 @@ class AgileCapture extends Page implements HasForms, HasTable
                                         ->numeric()
                                         ->step(0.01)
                                         ->live(onBlur: true)
+                                        ->columnSpan(fn (?DrillHoleSample $record) => $record?->sample_type === 'Control' ? 1 : 2)
                                         ->helperText(function () {
                                             $min = SampleSetting::getSettings()->min_sample_weight ?? 0.50;
                                             $max = SampleSetting::getSettings()->max_sample_weight ?? 15.00;
@@ -976,12 +992,107 @@ class AgileCapture extends Page implements HasForms, HasTable
 
                                     Select::make('control_type')
                                         ->label('Tipo de Control')
-                                        ->options([
-                                            'Blank-ML'  => 'Blank-ML',
-                                            'Standard'  => 'Standard',
-                                            'Duplicate' => 'Duplicate',
-                                        ])
-                                        ->visible(fn (?DrillHoleSample $record) => $record?->sample_type === 'Control'),
+                                        ->options(function (?DrillHoleSample $record, Page $livewire) {
+                                            $blank = method_exists($livewire, 'getBlankLabelProperty') ? $livewire->blankLabel : 'BLANK-ML';
+                                            $options = [
+                                                'Standard'  => 'Standard',
+                                                $blank      => $blank,
+                                                'Duplicate' => 'Duplicate',
+                                            ];
+                                            if ($record && !empty($record->control_type) && !isset($options[$record->control_type])) {
+                                                $options[$record->control_type] = $record->control_type;
+                                            }
+                                            return $options;
+                                        })
+                                        ->formatStateUsing(function ($state) {
+                                            if (!$state) return null;
+                                            $val = strtoupper(trim((string) $state));
+                                            if (str_contains($val, 'STAND')) return 'Standard';
+                                            if (str_contains($val, 'DUP')) return 'Duplicate';
+                                            return $state;
+                                        })
+                                        ->live()
+                                        ->afterStateUpdated(function (Set $set, ?string $state) {
+                                            $val = strtoupper(trim((string) $state));
+                                            if (!str_contains($val, 'STAND')) {
+                                                $set('standard_sample_id', null);
+                                            }
+                                            if (!str_contains($val, 'DUP')) {
+                                                $set('duplicate_sample_id', null);
+                                            }
+                                        })
+                                        ->visible(fn (?DrillHoleSample $record) => $record?->sample_type === 'Control')
+                                        ->required(fn (?DrillHoleSample $record) => $record?->sample_type === 'Control'),
+
+                                    Select::make('standard_sample_id')
+                                        ->label('Tipo de Estándar (STD)')
+                                        ->options(function (?DrillHoleSample $record) {
+                                            return StandardSample::query()
+                                                ->where(function ($query) use ($record) {
+                                                    $query->where('status', true);
+                                                    if ($record?->standard_sample_id) {
+                                                        $query->orWhere('id', $record->standard_sample_id);
+                                                    }
+                                                })
+                                                ->orderBy('standard_name')
+                                                ->pluck('standard_name', 'id')
+                                                ->toArray();
+                                        })
+                                        ->searchable()
+                                        ->preload()
+                                        ->placeholder('Seleccione un estándar...')
+                                        ->columnSpanFull()
+                                        ->required(function (Get $get, ?DrillHoleSample $record) {
+                                            if ($record?->sample_type !== 'Control') return false;
+                                            $ctrl = strtoupper(trim((string) $get('control_type')));
+                                            return str_contains($ctrl, 'STAND');
+                                        })
+                                        ->visible(function (Get $get, ?DrillHoleSample $record) {
+                                            if ($record?->sample_type !== 'Control') return false;
+                                            $ctrl = strtoupper(trim((string) $get('control_type')));
+                                            return str_contains($ctrl, 'STAND');
+                                        }),
+
+                                    Select::make('duplicate_sample_id')
+                                        ->label('Muestra Original a Duplicar')
+                                        ->options(function (?DrillHoleSample $record, Page $livewire) {
+                                            $barrenoId = $record?->barreno_id ?? $livewire->selectedBarrenoId;
+                                            if (!$barrenoId) {
+                                                return [];
+                                            }
+                                            return DrillHoleSample::query()
+                                                ->where('barreno_id', $barrenoId)
+                                                ->where(function ($query) use ($record) {
+                                                    $query->where('sample_type', 'O');
+                                                    if ($record?->duplicate_sample_id) {
+                                                        $query->orWhere('id', $record->duplicate_sample_id);
+                                                    }
+                                                })
+                                                ->when($record, fn($q) => $q->where('id', '!=', $record->id))
+                                                ->orderBy('sample_number', 'asc')
+                                                ->get()
+                                                ->mapWithKeys(function ($s) {
+                                                    $depth = ($s->from_depth !== null && $s->to_depth !== null)
+                                                        ? " ({$s->from_depth}m - {$s->to_depth}m)"
+                                                        : '';
+                                                    return [$s->id => "{$s->sample_number}{$depth}"];
+                                                })
+                                                ->toArray();
+                                        })
+                                        ->searchable()
+                                        ->preload()
+                                        ->placeholder('Seleccione la muestra original...')
+                                        ->columnSpanFull()
+                                        ->required(function (Get $get, ?DrillHoleSample $record) {
+                                            if ($record?->sample_type !== 'Control') return false;
+                                            $ctrl = strtoupper(trim((string) $get('control_type')));
+                                            return str_contains($ctrl, 'DUP');
+                                        })
+                                        ->visible(function (Get $get, ?DrillHoleSample $record) {
+                                            if ($record?->sample_type !== 'Control') return false;
+                                            $ctrl = strtoupper(trim((string) $get('control_type')));
+                                            return str_contains($ctrl, 'DUP');
+                                        }),
                                 ]),
                             ]),
 
@@ -1030,7 +1141,34 @@ class AgileCapture extends Page implements HasForms, HasTable
                         return $actions;
                     })
                     ->before(function (EditAction $action, DrillHoleSample $record, array $data) {
-                        if ($record->sample_type !== 'Control') {
+                        if ($record->sample_type === 'Control') {
+                            $ctrl = strtoupper(trim((string)($data['control_type'] ?? '')));
+                            if (empty($ctrl)) {
+                                throw \Illuminate\Validation\ValidationException::withMessages([
+                                    'control_type' => 'El Tipo de Control es requerido.',
+                                ]);
+                            }
+                            if (str_contains($ctrl, 'STAND') && empty($data['standard_sample_id'])) {
+                                throw \Illuminate\Validation\ValidationException::withMessages([
+                                    'standard_sample_id' => 'El Estándar de Referencia es requerido.',
+                                ]);
+                            }
+                            if (str_contains($ctrl, 'DUP') && empty($data['duplicate_sample_id'])) {
+                                throw \Illuminate\Validation\ValidationException::withMessages([
+                                    'duplicate_sample_id' => 'La Muestra Original a duplicar es requerida.',
+                                ]);
+                            }
+                            if (isset($data['weight']) && trim((string)$data['weight']) !== '') {
+                                $wVal = (float)$data['weight'];
+                                $minWeight = (float) (\App\Models\SampleSetting::getSettings()->min_sample_weight ?? 0.50);
+                                $maxWeight = (float) (\App\Models\SampleSetting::getSettings()->max_sample_weight ?? 15.00);
+                                if ($wVal < $minWeight || $wVal > $maxWeight) {
+                                    throw \Illuminate\Validation\ValidationException::withMessages([
+                                        'weight' => "El Peso ({$wVal} kg) debe estar entre {$minWeight} kg y {$maxWeight} kg.",
+                                    ]);
+                                }
+                            }
+                        } else {
                             $from = isset($data['from_depth']) && is_numeric($data['from_depth']) ? (float)$data['from_depth'] : null;
                             $to = isset($data['to_depth']) && is_numeric($data['to_depth']) ? (float)$data['to_depth'] : null;
                             $recup = isset($data['sample_length']) && is_numeric($data['sample_length']) ? (float)$data['sample_length'] : null;
@@ -1055,6 +1193,20 @@ class AgileCapture extends Page implements HasForms, HasTable
                     ->using(function (DrillHoleSample $record, array $data): DrillHoleSample {
                         if ($record->sample_type !== 'Control' && isset($data['from_depth'], $data['to_depth']) && is_numeric($data['from_depth']) && is_numeric($data['to_depth'])) {
                             $data['length'] = round((float)$data['to_depth'] - (float)$data['from_depth'], 2);
+                        }
+                        if ($record->sample_type === 'Control') {
+                            $data['from_depth'] = null;
+                            $data['to_depth'] = null;
+                            $data['length'] = null;
+                            $data['sample_length'] = null;
+
+                            $ctrl = strtoupper(trim((string)($data['control_type'] ?? '')));
+                            if (!str_contains($ctrl, 'STAND')) {
+                                $data['standard_sample_id'] = null;
+                            }
+                            if (!str_contains($ctrl, 'DUP')) {
+                                $data['duplicate_sample_id'] = null;
+                            }
                         }
                         $record->update($data);
                         return $record;

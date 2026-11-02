@@ -137,6 +137,8 @@ class DrillHoleForm
                                     'NAR' => 'NAR - Naranjo',
                                     'TDS' => 'TDS - Todos Santos',
                                     'ATZ' => 'ATZ - Atzcala',
+                                    "SMC" => 'SMC - San Miguel Corridor',
+                                    "MZC" => 'MZC - Mezcala',
                                 ])
                                 ->columnSpan(2),
 

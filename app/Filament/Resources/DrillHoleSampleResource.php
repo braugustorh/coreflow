@@ -222,7 +222,9 @@ class DrillHoleSampleResource extends Resource
 
                     Forms\Components\Select::make('standard_sample_id')
                         ->label('Estándar de Referencia')
-                        ->relationship('standardSample', 'standard_name')
+                        ->relationship('standardSample', 'standard_name', fn(Builder $query, ?DrillHoleSample $record) => 
+                            $query->where('status', true)->when($record?->standard_sample_id, fn($q) => $q->orWhere('id', $record->standard_sample_id))
+                        )
                         ->searchable()
                         ->preload()
                         ->disabled(fn(?DrillHoleSample $record): bool => $record?->isSent() ?? false)
@@ -231,11 +233,24 @@ class DrillHoleSampleResource extends Resource
                     Forms\Components\Select::make('duplicate_sample_id')
                         ->label('Muestra Original (Duplicado)')
                         ->options(
-                            fn(Get $get, ?DrillHoleSample $record) => DrillHoleSample::where('status', 'draft')
-                                ->where('capture_source', 'import')
+                            fn(Get $get, ?DrillHoleSample $record) => DrillHoleSample::query()
                                 ->when($record, fn($q) => $q->where('barreno_id', $record->barreno_id))
+                                ->where(function ($query) use ($record) {
+                                    $query->where('sample_type', 'O');
+                                    if ($record?->duplicate_sample_id) {
+                                        $query->orWhere('id', $record->duplicate_sample_id);
+                                    }
+                                })
+                                ->when($record, fn($q) => $q->where('id', '!=', $record->id))
                                 ->whereNotNull('sample_number')
-                                ->pluck('sample_number', 'id')
+                                ->orderBy('sample_number', 'asc')
+                                ->get()
+                                ->mapWithKeys(function ($s) {
+                                    $depth = ($s->from_depth !== null && $s->to_depth !== null)
+                                        ? " ({$s->from_depth}m - {$s->to_depth}m)"
+                                        : '';
+                                    return [$s->id => "{$s->sample_number}{$depth}"];
+                                })
                                 ->toArray()
                         )
                         ->searchable()
