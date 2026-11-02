@@ -177,4 +177,74 @@ class WorkOrder extends Model
     {
         return (bool) $this->sent_to_lab;
     }
+
+    // ─── Eliminación / Desasociación controlada ──────────────────────────────
+
+    /** Roles autorizados para eliminar o desasociar muestras de una Work Order. */
+    public const MANAGER_ROLES = ['super_admin', 'Admin CoreFlow'];
+
+    /** Estatus de WO que bloquean eliminar/desasociar (completada / liberada). */
+    public const LOCKING_STATUSES = ['Liberado', 'Barreno completo en Lab'];
+
+    /**
+     * Indica si el usuario puede eliminar WOs o desasociar sus muestras.
+     */
+    public static function userCanManageAssociations(?\Illuminate\Contracts\Auth\Authenticatable $user = null): bool
+    {
+        $user ??= auth()->user();
+
+        return $user && method_exists($user, 'hasRole') && $user->hasRole(self::MANAGER_ROLES);
+    }
+
+    /**
+     * Motivo por el cual la WO NO puede eliminarse ni desasociar sus muestras
+     * (null si la operación está permitida).
+     *
+     * Se bloquea cuando la WO:
+     *  - ya fue enviada desde el Monitor de Muestreo (sent_to_lab o muestras archivadas),
+     *  - tiene estatus logístico "Recibida" en Summary Samples (fecha de recepción),
+     *  - tiene Work Order Status "Completada" (Barreno completo en Lab) o "Liberado".
+     */
+    public function getAssociationLockReason(): ?string
+    {
+        if ($this->sent_to_lab || $this->drillHoleSamples()->where('is_archived', true)->exists()) {
+            return 'La Work Order ya fue enviada desde el Monitor de Muestreo.';
+        }
+
+        if (!empty($this->getRawOriginal('reception_date'))) {
+            return 'La Work Order ya tiene estatus logístico "Recibida" en Summary Samples.';
+        }
+
+        if (in_array($this->status, self::LOCKING_STATUSES, true)) {
+            return "La Work Order tiene el estatus \"{$this->status}\" en Summary Samples.";
+        }
+
+        return null;
+    }
+
+    public function canBeDeletedOrReleased(): bool
+    {
+        return $this->getAssociationLockReason() === null;
+    }
+
+    /**
+     * Desvincula todas las muestras de la WO (quedan sin Work Order, conservando sus datos)
+     * y recalcula el conteo. Devuelve cuántas muestras se desasociaron.
+     */
+    public function releaseSamples(): int
+    {
+        return \Illuminate\Support\Facades\DB::transaction(function (): int {
+            $ids = DrillHoleSample::where('work_order_id', $this->id)->pluck('id')->all();
+
+            if (empty($ids)) {
+                return 0;
+            }
+
+            $count = DrillHoleSample::whereIn('id', $ids)->update(['work_order_id' => null]);
+
+            $this->forceFill(['samples_quantity' => 0])->save();
+
+            return $count;
+        });
+    }
 }

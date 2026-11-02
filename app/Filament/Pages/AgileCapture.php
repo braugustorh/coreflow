@@ -1240,28 +1240,34 @@ class AgileCapture extends Page implements HasForms, HasTable
 
                         $query = DrillHoleSample::where('barreno_id', $barrenoId)
                             ->where('is_archived', false)
-                            ->whereDoesntHave('workOrder', fn($q) => $q->whereHas('drillHoleSamples', fn($s) => $s->where('is_archived', true)));
+                            ->whereDoesntHave('workOrder', fn($q) => $q->where('sent_to_lab', true)->orWhereHas('drillHoleSamples', fn($s) => $s->where('is_archived', true)));
                         $scope = $data['scope'] ?? 'all';
                         $coreSize = $data['core_size'];
-                        $updatedCount = 0;
+                        $targetIds = [];
 
                         if ($scope === 'all') {
-                            $updatedCount = (clone $query)->update(['core_size' => $coreSize]);
+                            $targetIds = (clone $query)->pluck('id')->all();
                         } elseif ($scope === 'single') {
                             $start = trim((string) ($data['sample_start'] ?? ''));
-                            $updatedCount = (clone $query)
+                            $targetIds = (clone $query)
                                 ->where('sample_number', $start)
-                                ->update(['core_size' => $coreSize]);
+                                ->pluck('id')
+                                ->all();
                         } elseif ($scope === 'range') {
                             $start = trim((string) ($data['sample_start'] ?? ''));
                             $end   = trim((string) ($data['sample_end'] ?? ''));
 
-                            $allSamples = (clone $query)->get();
-                            $matchedIds = $this->getSampleIdsInRange($allSamples, $start, $end);
-                            if (!empty($matchedIds)) {
-                                $updatedCount = (clone $query)->whereIn('id', $matchedIds)->update(['core_size' => $coreSize]);
-                            }
+                            $allSamples = (clone $query)->get(['id', 'sample_number']);
+                            $targetIds = $this->getSampleIdsInRange($allSamples, $start, $end);
                         }
+
+                        $updatedCount = 0;
+                        if (!empty($targetIds)) {
+                            $updatedCount = DrillHoleSample::whereIn('id', $targetIds)
+                                ->update(['core_size' => $coreSize]);
+                        }
+
+                        $this->flushCachedTableRecords();
 
                         Notification::make()
                             ->title('Core Size asignado')
@@ -1476,24 +1482,34 @@ class AgileCapture extends Page implements HasForms, HasTable
 
                         $query = DrillHoleSample::where('barreno_id', $barrenoId)
                             ->where('is_archived', false)
-                            ->whereDoesntHave('workOrder', fn($q) => $q->whereHas('drillHoleSamples', fn($s) => $s->where('is_archived', true)));
+                            ->whereDoesntHave('workOrder', fn($q) => $q->where('sent_to_lab', true)->orWhereHas('drillHoleSamples', fn($s) => $s->where('is_archived', true)));
 
-                        $updatedCount = 0;
+                        $targetIds = [];
                         if ($scope === 'all') {
-                            $updatedCount = (clone $query)->update(['core_size' => $coreSize]);
+                            $targetIds = (clone $query)->pluck('id')->all();
                         } elseif ($scope === 'single') {
                             $start = trim((string) ($data['sample_start'] ?? ''));
-                            $updatedCount = (clone $query)
+                            $targetIds = (clone $query)
                                 ->where('sample_number', $start)
-                                ->update(['core_size' => $coreSize]);
+                                ->pluck('id')
+                                ->all();
                         } else {
-                            $targetIds = $records->pluck('id')->toArray();
-                            if (!empty($targetIds)) {
-                                $updatedCount = (clone $query)
-                                    ->whereIn('id', $targetIds)
-                                    ->update(['core_size' => $coreSize]);
+                            $selectedIds = $records->pluck('id')->toArray();
+                            if (!empty($selectedIds)) {
+                                $targetIds = (clone $query)
+                                    ->whereIn('id', $selectedIds)
+                                    ->pluck('id')
+                                    ->all();
                             }
                         }
+
+                        $updatedCount = 0;
+                        if (!empty($targetIds)) {
+                            $updatedCount = DrillHoleSample::whereIn('id', $targetIds)
+                                ->update(['core_size' => $coreSize]);
+                        }
+
+                        $this->flushCachedTableRecords();
 
                         Notification::make()
                             ->title('Core Size asignado')

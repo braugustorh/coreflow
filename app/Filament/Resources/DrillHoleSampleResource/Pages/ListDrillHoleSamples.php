@@ -574,30 +574,32 @@ class ListDrillHoleSamples extends ListRecords
                         ->where('status', 'draft')
                         ->where('capture_source', 'import')
                         ->where('is_archived', false)
-                        ->whereDoesntHave('workOrder', fn($q) => $q->whereHas('drillHoleSamples', fn($s) => $s->where('is_archived', true)));
+                        ->whereDoesntHave('workOrder', fn($q) => $q->where('sent_to_lab', true)->orWhereHas('drillHoleSamples', fn($s) => $s->where('is_archived', true)));
 
                     $scope     = $data['scope'] ?? 'all';
                     $coreSize  = $data['core_size'];
-                    $updatedCount = 0;
+                    $targetIds = [];
 
                     if ($scope === 'all') {
-                        $updatedCount = (clone $baseQuery)->update(['core_size' => $coreSize]);
+                        $targetIds = (clone $baseQuery)->pluck('id')->all();
                     } elseif ($scope === 'single') {
                         $sampleStart = trim((string) ($data['sample_start'] ?? ''));
-                        $updatedCount = (clone $baseQuery)
+                        $targetIds = (clone $baseQuery)
                             ->where('sample_number', $sampleStart)
-                            ->update(['core_size' => $coreSize]);
+                            ->pluck('id')
+                            ->all();
                     } elseif ($scope === 'range') {
                         $sampleStart = trim((string) ($data['sample_start'] ?? ''));
                         $sampleEnd   = trim((string) ($data['sample_end'] ?? ''));
 
-                        $draftSamples = (clone $baseQuery)->get();
-                        $matchedIds   = $this->getSampleIdsInRange($draftSamples, $sampleStart, $sampleEnd);
+                        $draftSamples = (clone $baseQuery)->get(['id', 'sample_number']);
+                        $targetIds    = $this->getSampleIdsInRange($draftSamples, $sampleStart, $sampleEnd);
+                    }
 
-                        if (!empty($matchedIds)) {
-                            $updatedCount = DrillHoleSample::whereIn('id', $matchedIds)
-                                ->update(['core_size' => $coreSize]);
-                        }
+                    $updatedCount = 0;
+                    if (!empty($targetIds)) {
+                        $updatedCount = DrillHoleSample::whereIn('id', $targetIds)
+                            ->update(['core_size' => $coreSize]);
                     }
 
                     // Re-validar los borradores del usuario

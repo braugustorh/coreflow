@@ -32,9 +32,17 @@ class WorkOrderPolicy
         return $authUser->can('Update:WorkOrder');
     }
 
+    /**
+     * Solo super_admin y Admin CoreFlow pueden eliminar Work Orders.
+     */
     public function delete(AuthUser $authUser, WorkOrder $workOrder): bool
     {
-        return $authUser->can('Delete:WorkOrder');
+        return WorkOrder::userCanManageAssociations($authUser);
+    }
+
+    public function deleteAny(AuthUser $authUser): bool
+    {
+        return WorkOrder::userCanManageAssociations($authUser);
     }
 
     public function restore(AuthUser $authUser, WorkOrder $workOrder): bool
