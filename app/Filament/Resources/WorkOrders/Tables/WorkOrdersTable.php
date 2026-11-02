@@ -2,9 +2,11 @@
 
 namespace App\Filament\Resources\WorkOrders\Tables;
 
+use App\Models\WorkOrder;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
+use Filament\Notifications\Notification;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 
@@ -73,7 +75,18 @@ class WorkOrdersTable
                     ->icon('heroicon-o-table-cells')
                     ->color('success')
                     ->action(function (WorkOrder $record, \App\Services\SackFormGeneratorService $service) {
-                        return $service->generate($record);
+                        try {
+                            return $service->generate($record);
+                        } catch (\Throwable $e) {
+                            Notification::make()
+                                ->title('Error al generar Registro de Costales')
+                                ->body($e->getMessage())
+                                ->danger()
+                                ->persistent()
+                                ->send();
+
+                            return null;
+                        }
                     }),
             ])
             ->toolbarActions([

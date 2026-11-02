@@ -7,6 +7,7 @@ use App\Models\SampleSetting;
 use App\Models\WorkOrder;
 use Exception;
 use Illuminate\Support\Facades\Log;
+use RuntimeException;
 
 use PhpOffice\PhpSpreadsheet\IOFactory;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
@@ -21,7 +22,7 @@ class SackFormGeneratorService
      * Genera y retorna una respuesta de descarga en formato Excel (.xlsx)
      * del Registro de Costales para la Work Order proporcionada.
      */
-    public function generate(WorkOrder $workOrder): StreamedResponse
+    public function generate(WorkOrder $workOrder, ?string $customTemplatePath = null): StreamedResponse
     {
         // 1. Cargar las muestras asociadas ordenadas por número de muestra
         $samples = DrillHoleSample::where('work_order_id', $workOrder->id)
@@ -30,19 +31,29 @@ class SackFormGeneratorService
             ->get();
 
         if ($samples->isEmpty()) {
-            abort(422, 'La Work Order no tiene muestras asignadas.');
+            throw new RuntimeException('La Work Order no tiene muestras asignadas.');
         }
 
         // 2. Cargar la plantilla Excel
-        $templatePath = storage_path('app/templates/formatoCostalTemplate.xlsx');
+        $templatePath = $this->resolveTemplatePath($customTemplatePath);
 
-        if (!file_exists($templatePath)) {
-            // Fallback a la ubicación de descarga
-            $templatePath = 'C:\\Users\\braul\\Downloads\\formatoCostalTemplate.xlsx';
-        }
+        if ($templatePath === null) {
+            $searchedPaths = $customTemplatePath !== null
+                ? [$customTemplatePath]
+                : [
+                    resource_path('templates/formatoCostalTemplate.xlsx'),
+                    storage_path('app/templates/formatoCostalTemplate.xlsx'),
+                ];
 
-        if (!file_exists($templatePath)) {
-            abort(500, "Plantilla de costales no encontrada en {$templatePath}");
+            Log::error('Plantilla de costales no encontrada.', [
+                'work_order_id'   => $workOrder->id,
+                'work_order_code' => $workOrder->work_order_code,
+                'searched_paths'  => $searchedPaths,
+            ]);
+
+            throw new RuntimeException(
+                'No se encontró la plantilla de costales (formatoCostalTemplate.xlsx) en el servidor.'
+            );
         }
 
         $spreadsheet = IOFactory::load($templatePath);
@@ -102,6 +113,29 @@ class SackFormGeneratorService
                 'Cache-Control' => 'max-age=0',
             ]
         );
+    }
+
+    /**
+     * Resuelve la ruta de la plantilla Excel de costales buscando en las ubicaciones soportadas.
+     */
+    public function resolveTemplatePath(?string $customPath = null): ?string
+    {
+        if ($customPath !== null) {
+            return (file_exists($customPath) && is_readable($customPath)) ? $customPath : null;
+        }
+
+        $candidates = [
+            resource_path('templates/formatoCostalTemplate.xlsx'),
+            storage_path('app/templates/formatoCostalTemplate.xlsx'),
+        ];
+
+        foreach ($candidates as $path) {
+            if (is_string($path) && file_exists($path) && is_readable($path)) {
+                return $path;
+            }
+        }
+
+        return null;
     }
 
     /**

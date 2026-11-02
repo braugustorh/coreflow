@@ -531,10 +531,21 @@ class SamplingMonitorTable
                     ->color('success')
                     ->requiresConfirmation()
                     ->modalHeading('Registro de Costales (Excel)')
-                    ->modalDescription('Se generará el reporte Excel de Registro de Costales para el despacho al laboratorio Bureau Veritas.')
+                    ->modalDescription('Se generará el reporte Excel de Registro de Costales para el despacho al laboratorio.')
                     ->modalSubmitActionLabel('Descargar Excel')
                     ->action(function (WorkOrder $record, \App\Services\SackFormGeneratorService $service) {
-                        return $service->generate($record);
+                        try {
+                            return $service->generate($record);
+                        } catch (\Throwable $e) {
+                            Notification::make()
+                                ->title('Error al generar Registro de Costales')
+                                ->body($e->getMessage())
+                                ->danger()
+                                ->persistent()
+                                ->send();
+
+                            return null;
+                        }
                     }),
 
                 Action::make('send_order')
