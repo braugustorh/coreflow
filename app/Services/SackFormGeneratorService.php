@@ -4,7 +4,9 @@ namespace App\Services;
 
 use App\Models\DrillHoleSample;
 use App\Models\SampleSetting;
+use App\Models\User;
 use App\Models\WorkOrder;
+use Illuminate\Support\Carbon;
 use Exception;
 use Illuminate\Support\Facades\Log;
 use RuntimeException;
@@ -18,6 +20,9 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class SackFormGeneratorService
 {
+    /** Roles válidos para resolver el nombre del Geólogo a partir del código de supervisor. */
+    private const SUPERVISOR_ROLES = ['Supervisor Coreshack', 'Supervisor CoreS'];
+
     /**
      * Genera y retorna una respuesta de descarga en formato Excel (.xlsx)
      * del Registro de Costales para la Work Order proporcionada.
@@ -26,7 +31,7 @@ class SackFormGeneratorService
     {
         // 1. Cargar las muestras asociadas ordenadas por número de muestra
         $samples = DrillHoleSample::where('work_order_id', $workOrder->id)
-            ->with(['proyecto', 'barreno', 'duplicateSample'])
+            ->with(['proyecto', 'barreno.proyecto', 'duplicateSample'])
             ->orderByRaw('CAST(sample_number AS UNSIGNED), sample_number')
             ->get();
 
@@ -60,15 +65,10 @@ class SackFormGeneratorService
         $sheet = $spreadsheet->getActiveSheet();
 
         // 3. Obtener datos de cabecera
-        $firstSample  = $samples->first();
-        $proyecto     = $firstSample->proyecto;
-        $sede         = $workOrder->sede ?? $proyecto?->sede;
-
-        $supervisor = $samples
-            ->whereNotNull('responsible_supervisor')
-            ->first()?->responsible_supervisor
-            ?? auth()->user()?->name
-            ?? 'Geólogo';
+        $proyectoNombre = $this->resolveProjectName($samples);
+        $sentFrom       = $this->resolveSentFromProject($samples);
+        $geologo        = $this->resolveGeologistName($samples);
+        $sentDate       = $this->resolveSentDate($workOrder, $samples);
 
         $totalSamples = $workOrder->samples_quantity ?: $samples->count();
 
@@ -86,18 +86,21 @@ class SackFormGeneratorService
         $sheet->setCellValue('B7', 'Drill Core');
         $sheet->setCellValue('B8', (string) $totalSamples);
         $sheet->setCellValue('B9', (string) $totalSacks);
-        $sheet->setCellValue('B10', 'Bureau Veritas');
-        $sheet->setCellValue('B11', now()->format('d/m/Y'));
+        $sheet->setCellValue('B10', 'ALS');
+        $sheet->setCellValue('B11', $sentDate);
 
         // Columna E (Fila 7-11)
-        $sheet->setCellValue('E7', $proyecto?->nombre ?? 'Media Luna');
-        $sheet->setCellValue('E8', $sede?->name ?? 'San Miguel');
-        $sheet->setCellValue('E9', $supervisor);
+        $sheet->setCellValue('E7', $proyectoNombre);
+        $sheet->setCellValue('E8', $sentFrom);
+        $sheet->setCellValue('E9', $geologo);
         $sheet->setCellValue('E10', ''); // Vehículo en blanco
         $sheet->setCellValue('E11', ''); // Conductor en blanco
 
         // 6. Escribir los costales y sus muestras aplicando los colores y alturas de fila legibles (20pt)
         $this->populateSacksGrid($sheet, $sacks);
+
+        // 6.1 Fecha de impresión en "Firmas de Autorización" (la fila se desplaza según los costales)
+        $this->writePrintDate($sheet);
 
         // 7. Preparar la descarga StreamedResponse compatible con Filament/Livewire
         $filename = "Registro_Costales_WO_{$workOrder->work_order_code}.xlsx";
@@ -113,6 +116,113 @@ class SackFormGeneratorService
                 'Cache-Control' => 'max-age=0',
             ]
         );
+    }
+
+    /**
+     * Nombres únicos de proyecto tomados del barreno de las muestras (fuente real del proyecto).
+     *
+     * @return array<int, string>
+     */
+    private function barrenoProjectNames($samples): array
+    {
+        return collect($samples)
+            ->map(fn ($s) => $s->barreno?->proyecto?->nombre)
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * Proyecto (E7): proyecto del barreno; si no existe, el de la muestra; si no, 'Media Luna'.
+     */
+    private function resolveProjectName($samples): string
+    {
+        $names = $this->barrenoProjectNames($samples);
+
+        if (!empty($names)) {
+            return implode(', ', $names);
+        }
+
+        return collect($samples)->map(fn ($s) => $s->proyecto?->nombre)->filter()->first() ?? 'Media Luna';
+    }
+
+    /**
+     * Enviado desde (E8): proyecto real donde está declarado el barreno.
+     */
+    private function resolveSentFromProject($samples): string
+    {
+        $names = $this->barrenoProjectNames($samples);
+
+        if (!empty($names)) {
+            return implode(', ', $names);
+        }
+
+        return collect($samples)->map(fn ($s) => $s->proyecto?->nombre)->filter()->first() ?? 'N/A';
+    }
+
+    /**
+     * Geólogo (E9): usuario cuyo `code` coincide con el supervisor responsable del Monitor y que
+     * tiene rol Supervisor Coreshack / Supervisor CoreS. Si no existe, el usuario que imprime.
+     */
+    private function resolveGeologistName($samples): string
+    {
+        $code = trim((string) collect($samples)->whereNotNull('responsible_supervisor')->first()?->responsible_supervisor);
+
+        if ($code !== '') {
+            $user = User::query()
+                ->where('code', $code)
+                ->whereHas('roles', fn ($q) => $q->whereIn('name', self::SUPERVISOR_ROLES))
+                ->first();
+
+            if ($user && !empty($user->name)) {
+                return $user->name;
+            }
+        }
+
+        return auth()->user()?->name ?? 'Geólogo';
+    }
+
+    /**
+     * Fecha de Envío (B11): la capturada en el Monitor de Muestreo; si no hay, 'No Capturada'.
+     */
+    private function resolveSentDate(WorkOrder $workOrder, $samples): string
+    {
+        $date = collect($samples)->whereNotNull('sent_date')->first()?->sent_date
+            ?? $workOrder->dispatch_date;
+
+        return $date ? Carbon::parse($date)->format('d/m/Y') : 'No Capturada';
+    }
+
+    /**
+     * Escribe la fecha de impresión (hoy) en la celda de fecha de "Firmas de Autorización".
+     * Localiza dinámicamente la fila: columna E con el rótulo "FECHA"; la celda de captura queda debajo.
+     */
+    private function writePrintDate($sheet): void
+    {
+        $highest = $sheet->getHighestRow();
+        $labelRow = null;
+
+        for ($row = $highest; $row >= 1; $row--) {
+            if (strtoupper(trim((string) $sheet->getCell("E{$row}")->getValue())) === 'FECHA') {
+                $labelRow = $row;
+                break;
+            }
+        }
+
+        if ($labelRow === null) {
+            // Respaldo: el título "FIRMAS DE AUTORIZACIÓN" está 2 filas arriba de la celda de fecha
+            for ($row = $highest; $row >= 1; $row--) {
+                if (str_starts_with(strtoupper(trim((string) $sheet->getCell("A{$row}")->getValue())), 'FIRMAS DE AUTORIZ')) {
+                    $labelRow = $row + 1;
+                    break;
+                }
+            }
+        }
+
+        if ($labelRow !== null) {
+            $sheet->setCellValue('E' . ($labelRow + 1), now()->format('d/m/Y'));
+        }
     }
 
     /**
