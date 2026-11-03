@@ -342,6 +342,14 @@ class DrillHoleSampleResource extends Resource
             ->deferLoading()
             ->defaultSort('sample_number', 'asc')
             ->columns([
+                // ── Columna FIJA 0: Índice correlativo (#) ──
+                Tables\Columns\TextColumn::make('rowIndex')
+                    ->label('#')
+                    ->rowIndex()
+                    ->alignCenter()
+                    ->extraHeaderAttributes(['style' => 'position:sticky;left:0;z-index:3;background:inherit;width:44px;min-width:44px;'])
+                    ->extraAttributes(['style' => 'position:sticky;left:0;z-index:2;background:inherit;width:44px;min-width:44px;font-weight:600;color:#64748b;']),
+
                 // ── Columna FIJA 1: ícono de estado de validación ──
                 Tables\Columns\IconColumn::make('has_errors')
                     ->label('')
@@ -356,8 +364,8 @@ class DrillHoleSampleResource extends Resource
                         ? implode("\n", $record->errors)
                         : 'Sin errores'
                     )
-                    ->extraHeaderAttributes(['style' => 'position:sticky;left:0;z-index:3;background:inherit;'])
-                    ->extraAttributes(['style' => 'position:sticky;left:0;z-index:2;background:inherit;']),
+                    ->extraHeaderAttributes(['style' => 'position:sticky;left:44px;z-index:3;background:inherit;width:36px;min-width:36px;'])
+                    ->extraAttributes(['style' => 'position:sticky;left:44px;z-index:2;background:inherit;width:36px;min-width:36px;']),
 
                 // ── Columna FIJA 2: BHID ──
                 Tables\Columns\TextColumn::make('barreno.nombre_barreno')
@@ -365,8 +373,8 @@ class DrillHoleSampleResource extends Resource
                     ->searchable()
                     ->sortable()
                     ->weight('bold')
-                    ->extraHeaderAttributes(['style' => 'position:sticky;left:36px;z-index:3;background:inherit;'])
-                    ->extraAttributes(['style' => 'position:sticky;left:36px;z-index:2;background:inherit;']),
+                    ->extraHeaderAttributes(['style' => 'position:sticky;left:80px;z-index:3;background:inherit;'])
+                    ->extraAttributes(['style' => 'position:sticky;left:80px;z-index:2;background:inherit;']),
 
                 // ── Columna FIJA 3: No. Muestra ──
                 Tables\Columns\TextColumn::make('sample_number')
@@ -374,8 +382,8 @@ class DrillHoleSampleResource extends Resource
                     ->searchable()
                     ->sortable()
                     ->copyable()
-                    ->extraHeaderAttributes(['style' => 'position:sticky;left:140px;z-index:3;background:inherit;'])
-                    ->extraAttributes(['style' => 'position:sticky;left:140px;z-index:2;background:inherit;']),
+                    ->extraHeaderAttributes(['style' => 'position:sticky;left:184px;z-index:3;background:inherit;'])
+                    ->extraAttributes(['style' => 'position:sticky;left:184px;z-index:2;background:inherit;']),
 
                 // ── Columnas de intervalo ──
                 Tables\Columns\TextColumn::make('from_depth')

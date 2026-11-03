@@ -495,6 +495,14 @@ class ReviewDrillHoleSamples extends Page implements HasForms, HasTable
             ->defaultPaginationPageOption(75)
             ->paginationPageOptions([50, 75, 100, 200])
             ->columns([
+                // Columna 0: Índice correlativo (#)
+                Tables\Columns\TextColumn::make('rowIndex')
+                    ->label('#')
+                    ->rowIndex()
+                    ->alignCenter()
+                    ->extraHeaderAttributes(['style' => 'position:sticky;left:0;z-index:3;background:inherit;width:44px;min-width:44px;'])
+                    ->extraAttributes(['style' => 'position:sticky;left:0;z-index:2;background:inherit;width:44px;min-width:44px;font-weight:600;color:#64748b;']),
+
                 // Columna 1: Estado de validación
                 Tables\Columns\IconColumn::make('has_errors')
                     ->label('')
@@ -509,8 +517,8 @@ class ReviewDrillHoleSamples extends Page implements HasForms, HasTable
                             ? implode("\n", $record->errors)
                             : 'Sin errores'
                     )
-                    ->extraHeaderAttributes(['style' => 'position:sticky;left:0;z-index:3;background:inherit;'])
-                    ->extraAttributes(['style' => 'position:sticky;left:0;z-index:2;background:inherit;']),
+                    ->extraHeaderAttributes(['style' => 'position:sticky;left:44px;z-index:3;background:inherit;width:36px;min-width:36px;'])
+                    ->extraAttributes(['style' => 'position:sticky;left:44px;z-index:2;background:inherit;width:36px;min-width:36px;']),
 
                 // Columna 2: No. Muestra
                 Tables\Columns\TextColumn::make('sample_number')
@@ -518,8 +526,8 @@ class ReviewDrillHoleSamples extends Page implements HasForms, HasTable
                     ->searchable()
                     ->sortable()
                     ->copyable()
-                    ->extraHeaderAttributes(['style' => 'position:sticky;left:36px;z-index:3;background:inherit;'])
-                    ->extraAttributes(['style' => 'position:sticky;left:36px;z-index:2;background:inherit;']),
+                    ->extraHeaderAttributes(['style' => 'position:sticky;left:80px;z-index:3;background:inherit;'])
+                    ->extraAttributes(['style' => 'position:sticky;left:80px;z-index:2;background:inherit;']),
 
                 // Intervalos
                 Tables\Columns\TextColumn::make('from_depth')

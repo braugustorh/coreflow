@@ -617,7 +617,7 @@ class AgileCapture extends Page implements HasForms, HasTable
         $query = DrillHoleSample::query()
             ->whereIn('id', $records->pluck('id'))
             ->orderBy('sample_number', 'asc')
-            ->with(['standardSample', 'duplicateSample', 'workOrder', 'barreno'])
+            ->with(['standardSample', 'duplicateSample', 'workOrder', 'barreno', 'user'])
             ->withCount('qcPhotos');
 
         return response()->streamDownload(function () use ($query) {
@@ -627,7 +627,7 @@ class AgileCapture extends Page implements HasForms, HasTable
             $writer->addRow(\OpenSpout\Common\Entity\Row::fromValues([
                 'Barreno', 'Sample Number', 'From', 'To', 'Drilled Length', 'Sample Length',
                 'Sample Type', 'Control Type', 'Fotos QC', 'Core Size', 'Weight',
-                'Fecha Muestreo', 'WO', 'Comentarios',
+                'Fecha Muestreo', 'WO', 'Code', 'Comentarios',
             ]));
 
             $query->chunk(500, function ($samples) use ($writer) {
@@ -657,6 +657,7 @@ class AgileCapture extends Page implements HasForms, HasTable
                         $s->weight !== null ? (float) $s->weight : null,
                         $s->sampled_at?->format('d/m/Y H:i'),
                         $s->workOrder?->work_order_code,
+                        $s->user?->code ?? '—',
                         $s->comentarios,
                     ]));
                 }
@@ -673,7 +674,7 @@ class AgileCapture extends Page implements HasForms, HasTable
         return $table
             ->query(
                 fn() => DrillHoleSample::query()
-                    ->with(['standardSample', 'duplicateSample', 'qcPhotos', 'workOrder', 'barreno'])
+                    ->with(['standardSample', 'duplicateSample', 'qcPhotos', 'workOrder', 'barreno', 'user'])
                     ->withCount('qcPhotos')
                     ->where('barreno_id', $this->selectedBarrenoId ?? -1)
                     ->orderBy('sample_number', 'asc')
@@ -681,6 +682,9 @@ class AgileCapture extends Page implements HasForms, HasTable
             ->defaultPaginationPageOption(25)
             ->paginationPageOptions([10, 25, 75, 100])
             ->columns([
+                TextColumn::make('rowIndex')
+                    ->label('#')
+                    ->rowIndex(),
                 TextColumn::make('sample_number')
                     ->label('Sample Number')
                     ->searchable()
@@ -785,6 +789,15 @@ class AgileCapture extends Page implements HasForms, HasTable
                 TextColumn::make('workOrder.work_order_code')
                     ->label('WO')
                     ->sortable()
+                    ->toggleable(),
+                TextColumn::make('user.code')
+                    ->label('Code')
+                    ->tooltip(fn (DrillHoleSample $record): ?string => $record->user?->name)
+                    ->badge()
+                    ->color('gray')
+                    ->placeholder('—')
+                    ->sortable()
+                    ->searchable()
                     ->toggleable(),
                 TextColumn::make('comentarios')
                     ->label('Comentarios')
