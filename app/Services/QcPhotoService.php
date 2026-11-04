@@ -29,6 +29,7 @@ class QcPhotoService
             return true;
         }
 
+
         $sampleSedeId = $sample->barreno?->sede_id ?? $sample->proyecto?->sede_id;
         if ($sampleSedeId && $user->sede_id) {
             return (int) $user->sede_id === (int) $sampleSedeId;
