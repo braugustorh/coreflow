@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\DrillHoleSample;
+use App\Models\User;
 use App\Models\WorkOrder;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -21,7 +22,7 @@ class AlsFormFillService
     {
         // 1. Cargar muestras ordenadas
         $samples = DrillHoleSample::where('work_order_id', $workOrder->id)
-            ->with(['proyecto', 'barreno'])
+            ->with(['proyecto', 'barreno.proyecto'])
             ->orderByRaw('CAST(sample_number AS UNSIGNED), sample_number')
             ->get();
 
@@ -30,18 +31,33 @@ class AlsFormFillService
         }
 
         // 2. Datos de cabecera
-        $firstSample = $samples->first();
-        $proyecto    = $firstSample->proyecto;
-        $sede        = $workOrder->sede ?? $proyecto?->sede;
-        $companyName = $sede?->name ?? 'Minera Media Luna';
+        $companyName = (string) config('als.company', 'Minera Media Luna');
 
-        $supervisor = $samples
+        // Código de supervisor elegido en el monitor (MF / EC)
+        $supervisorCode = trim((string) ($samples
             ->whereNotNull('responsible_supervisor')
-            ->first()?->responsible_supervisor ?? '';
+            ->first()?->responsible_supervisor ?? ''));
 
+        // Nombre del usuario cuyo code coincide; vacío si no existe
+        $supervisor = $supervisorCode !== ''
+            ? (string) (User::where('code', $supervisorCode)->value('name') ?? '')
+            : '';
+
+        $phone = (string) (config('als.supervisor_phones')[strtoupper($supervisorCode)] ?? '');
+
+        // Fecha de envío capturada (sin respaldo a la fecha actual)
         $sentDate = $samples
             ->whereNotNull('sent_date')
-            ->first()?->sent_date?->format('d/m/Y') ?? now()->format('d/m/Y');
+            ->first()?->sent_date?->format('d/m/Y') ?? '';
+
+        // Proyecto tomado del barreno (primero las muestras no QC)
+        $isControl = fn ($s) => strtolower((string) $s->sample_type) === 'control' || ! empty($s->control_type);
+        $proyecto = $samples->reject($isControl)->map(fn ($s) => $s->barreno?->proyecto)->filter()->first()
+            ?? $samples->map(fn ($s) => $s->barreno?->proyecto)->filter()->first();
+
+        $projectName = $proyecto?->nombre ?: (string) config('als.unregistered_label', 'Sin registrar');
+        $blankGra09  = $proyecto !== null
+            && in_array(strtoupper((string) $proyecto->code), config('als.blank_gra09_projects', []), true);
 
         $isRush       = $samples->contains('rush', true);
         $totalSamples = $workOrder->samples_quantity ?: $samples->count();
@@ -54,8 +70,10 @@ class AlsFormFillService
             workOrder:    $workOrder,
             companyName:  $companyName,
             supervisor:   $supervisor,
+            phone:        $phone,
             sentDate:     $sentDate,
-            proyecto:     $proyecto,
+            projectName:  $projectName,
+            blankGra09:   $blankGra09,
             isRush:       $isRush,
             totalSamples: $totalSamples,
             groups:       $groups,
@@ -83,8 +101,10 @@ class AlsFormFillService
         WorkOrder $workOrder,
         string    $companyName,
         string    $supervisor,
+        string    $phone,
         string    $sentDate,
-        mixed     $proyecto,
+        string    $projectName,
+        bool      $blankGra09,
         bool      $isRush,
         int       $totalSamples,
         array     $groups,
@@ -93,7 +113,9 @@ class AlsFormFillService
             // --- Cabecera ---
             ['fieldName' => 'Company name', 'text' => $companyName],
             ['fieldName' => 'Submitted by',  'text' => $supervisor],
-            ['fieldName' => 'Project ID',    'text' => $proyecto?->name ?? ''],
+            ['fieldName' => 'Contact number', 'text' => $phone],
+            ['fieldName' => 'Autorised by Name', 'text' => $supervisor],
+            ['fieldName' => 'Project ID',    'text' => $projectName],
             ['fieldName' => 'Dispatch#',     'text' => $workOrder->work_order_code],
             ['fieldName' => 'Workorder#',    'text' => $workOrder->work_order_code],
             ['fieldName' => 'PO#',           'text' => $workOrder->work_order_code],
@@ -105,6 +127,11 @@ class AlsFormFillService
             ['fieldName' => 'Rush',              'text' => $isRush ? 'true' : 'false'],
             ['fieldName' => 'Tipo de muestra',   'text' => 'true'], // siempre Core
         ];
+
+        // --- Columna Análisis: en ATZ/NJO/NAR se vacía la celda 7 (OA-GRA09s) ---
+        if ($blankGra09) {
+            $fields[] = ['fieldName' => 'Analytical 7', 'text' => ''];
+        }
 
         // --- Filas de la tabla (máximo 7 grupos) ---
         $rows = array_slice($groups, 0, self::MAX_ROWS);

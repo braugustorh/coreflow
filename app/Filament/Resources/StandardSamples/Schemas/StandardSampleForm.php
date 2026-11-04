@@ -56,14 +56,12 @@ class StandardSampleForm
                                     ->getOptionLabelFromRecordUsing(fn ($record) => "{$record->symbol} - {$record->name}")
                                     ->searchable(['symbol', 'name'])
                                     ->preload()
-                                    ->required()
                                     ->columnSpan(2),
                                 Select::make('assay_method_id')
                                     ->label('Método')
                                     ->relationship('assayMethod', 'code')
                                     ->searchable()
                                     ->preload()
-                                    ->required()
                                     ->columnSpan(2),
                                 TextInput::make('mean')
                                     ->label('Media')
@@ -78,7 +76,7 @@ class StandardSampleForm
                                     ->label('Desv. Std.')
                                     ->numeric(),
                             ])
-                            ->defaultItems(1)
+                            ->defaultItems(0)
                             ->addActionLabel('Agregar Valor'),
                     ]),
             ]);

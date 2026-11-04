@@ -842,6 +842,106 @@ class ReviewDrillHoleSamples extends Page implements HasForms, HasTable
                         })
                         ->deselectRecordsAfterCompletion(),
 
+                    BulkAction::make('assign_core_size')
+                        ->label('Asignar Core Size')
+                        ->icon('heroicon-o-circle-stack')
+                        ->color('info')
+                        ->form(function (Collection $records) {
+                            $sorted = $records->sortBy(function ($s) {
+                                if (preg_match('/(\d+)/', (string) $s->sample_number, $m)) {
+                                    return (int) $m[1];
+                                }
+                                return $s->sample_number;
+                            })->values();
+
+                            $firstNum = $sorted->first()?->sample_number ?? '';
+                            $lastNum  = $sorted->last()?->sample_number ?? '';
+
+                            return [
+                                Forms\Components\Radio::make('scope')
+                                    ->label('Aplicar a')
+                                    ->options([
+                                        'selected' => "Solo las muestras seleccionadas ({$records->count()})",
+                                        'range'    => 'Rango de muestras (Muestra Inicio X a Muestra Fin Y)',
+                                        'single'   => 'Muestra única',
+                                        'all'      => 'Todas las muestras de este barreno',
+                                    ])
+                                    ->default('selected')
+                                    ->live(),
+
+                                Forms\Components\TextInput::make('sample_start')
+                                    ->label('Muestra Inicio (X)')
+                                    ->default($firstNum)
+                                    ->placeholder('Ej: ML157100')
+                                    ->required(fn(Get $get) => in_array($get('scope'), ['range', 'single']))
+                                    ->hidden(fn(Get $get) => in_array($get('scope'), ['all', 'selected'])),
+
+                                Forms\Components\TextInput::make('sample_end')
+                                    ->label('Muestra Fin (Y)')
+                                    ->default($lastNum)
+                                    ->placeholder('Ej: ML157110')
+                                    ->required(fn(Get $get) => $get('scope') === 'range')
+                                    ->hidden(fn(Get $get) => in_array($get('scope'), ['all', 'selected', 'single'])),
+
+                                Forms\Components\Select::make('core_size')
+                                    ->label('Tamaño de Núcleo (Core Size)')
+                                    ->options([
+                                        'PQ' => 'PQ',
+                                        'HQ' => 'HQ',
+                                        'NQ' => 'NQ',
+                                        'BQ' => 'BQ',
+                                    ])
+                                    ->required()
+                                    ->native(false),
+                            ];
+                        })
+                        ->modalHeading("Asignar Core Size a {$this->drillHole?->nombre_barreno}")
+                        ->modalDescription('Selecciona las muestras y el Core Size a aplicar.')
+                        ->action(function (Collection $records, array $data, SampleValidationService $service) use ($barrenoId) {
+                            $baseQuery = DrillHoleSample::where('barreno_id', $barrenoId)
+                                ->where('status', 'draft')
+                                ->where('capture_source', 'import')
+                                ->where('is_archived', false)
+                                ->whereDoesntHave('workOrder', fn($q) => $q->where('sent_to_lab', true)->orWhereHas('drillHoleSamples', fn($s) => $s->where('is_archived', true)));
+
+                            $scope     = $data['scope'] ?? 'selected';
+                            $coreSize  = $data['core_size'];
+                            $targetIds = [];
+
+                            if ($scope === 'selected') {
+                                $targetIds = (clone $baseQuery)->whereIn('id', $records->pluck('id'))->pluck('id')->all();
+                            } elseif ($scope === 'all') {
+                                $targetIds = (clone $baseQuery)->pluck('id')->all();
+                            } elseif ($scope === 'single') {
+                                $sampleStart = trim((string) ($data['sample_start'] ?? ''));
+                                $targetIds = (clone $baseQuery)
+                                    ->where('sample_number', $sampleStart)
+                                    ->pluck('id')
+                                    ->all();
+                            } elseif ($scope === 'range') {
+                                $sampleStart = trim((string) ($data['sample_start'] ?? ''));
+                                $sampleEnd   = trim((string) ($data['sample_end'] ?? ''));
+
+                                $draftSamples = (clone $baseQuery)->get(['id', 'sample_number']);
+                                $targetIds    = $this->getSampleIdsInRange($draftSamples, $sampleStart, $sampleEnd);
+                            }
+
+                            $updatedCount = 0;
+                            if (!empty($targetIds)) {
+                                $updatedCount = DrillHoleSample::whereIn('id', $targetIds)
+                                    ->update(['core_size' => $coreSize]);
+                            }
+
+                            // Re-validar este barreno
+                            $service->validateDraftsForBarreno($barrenoId);
+
+                            Notification::make()
+                                ->title("Core Size {$coreSize} asignado a {$updatedCount} muestra(s).")
+                                ->success()
+                                ->send();
+                        })
+                        ->deselectRecordsAfterCompletion(),
+
                     BulkAction::make('assign_work_order')
                         ->label('Asignar Work Order')
                         ->icon('heroicon-o-briefcase')

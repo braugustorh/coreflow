@@ -53,7 +53,7 @@ class AlsFormGeneratorService
         $sampleTo     = $samples->last()->sample_number;
         $totalSamples = $workOrder->samples_quantity ?: $samples->count();
 
-        $filename = "Formulario_ALS_WO_{$workOrder->work_order_code}.pdf";
+        $filename = "ALS_Form_WO_{$workOrder->work_order_code}.pdf";
 
         // 4. Renderizar la vista Blade y generar el PDF
         $pdf = Pdf::loadView('pdf.als-form', [

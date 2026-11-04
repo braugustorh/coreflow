@@ -1451,16 +1451,18 @@
                                         <td style="min-width: 140px;">
                                             <template x-if="sample.sample_type === 'Control'">
                                                 <div style="display:flex; flex-direction:column; gap:4px;">
-                                                    <select x-model="sample.control_type" class="ac-grid-input">
+                                                    <select x-model="sample.control_type" class="ac-grid-input" x-on:change="onControlTypeChange(sample)">
                                                         <option value="Standard">Standard</option>
                                                         <option :value="blankLabel" x-text="blankLabel"></option>
                                                         <option value="Duplicate">Duplicate</option>
                                                     </select>
                                                     <template x-if="sample.control_type === 'Standard'">
-                                                        <select x-model="sample.standard_sample_id" class="ac-grid-input">
+                                                        <select x-model="sample.standard_sample_id" class="ac-grid-input"
+                                                            x-init="$nextTick(() => { $el.value = sample.standard_sample_id ?? ''; })">
                                                             <option value="">Seleccione Std...</option>
                                                             <template x-for="s in estandares" :key="s.id">
-                                                                <option :value="s.id" x-text="s.standard_name"></option>
+                                                                <option :value="s.id" x-text="s.standard_name"
+                                                                    :selected="String(s.id) === String(sample.standard_sample_id)"></option>
                                                             </template>
                                                         </select>
                                                     </template>
@@ -1478,14 +1480,13 @@
                                         <!-- Desde -->
                                         <td>
                                             <input type="number" step="0.01" x-model="sample.from_depth" class="ac-grid-input"
-                                                style="width: 70px;" :disabled="sample.sample_type === 'Control'"
-                                                x-on:blur="autoFillLowRecoveryComment(index)">
+                                                style="width: 70px;" :disabled="sample.sample_type === 'Control'">
                                         </td>
                                         <!-- Hasta -->
                                         <td>
                                             <input type="number" step="0.01" x-model="sample.to_depth" class="ac-grid-input"
                                                 style="width: 70px;" :disabled="sample.sample_type === 'Control'"
-                                                x-on:blur="autoFillLowRecoveryComment(index)">
+                                                x-on:input="propagateTo(index)">
                                         </td>
                                         <!-- Length (Calculado, no editable) -->
                                         <td>
@@ -1497,7 +1498,6 @@
                                             <input type="number" step="0.01" x-model="sample.sample_length"
                                                 class="ac-grid-input" style="width: 70px;"
                                                 :disabled="sample.sample_type === 'Control'"
-                                                x-on:blur="autoFillLowRecoveryComment(index)"
                                                 x-on:keydown.enter.prevent="addEmptyRow()">
                                         </td>
                                         <!-- Peso -->
@@ -1922,6 +1922,19 @@
                         });
                     },
 
+                    // Comodín 'STD-2': solo si existe y está activo (estandares ya viene filtrado por status = true).
+                    // Si no existe, devuelve '' y el usuario elige manualmente.
+                    getPlaceholderStandardId() {
+                        let std = (this.estandares || []).find(s => String(s.standard_name || '').trim().toUpperCase() === 'STD-2');
+                        return std ? std.id : '';
+                    },
+
+                    onControlTypeChange(sample) {
+                        if (sample.control_type === 'Standard' && !sample.standard_sample_id) {
+                            sample.standard_sample_id = this.getPlaceholderStandardId();
+                        }
+                    },
+
                     addEmptyRow() {
                         let sNumber = this.samples.length === 0 ? this.nextSampleNum : this.incrementSampleNumber(this.samples[this.samples.length - 1].sample_number);
                         let fDepth = this.samples.length === 0 ? this.lastToDepth : this.samples[this.samples.length - 1].to_depth;
@@ -1933,7 +1946,7 @@
                             sample_number: sNumber,
                             sample_type: 'O',
                             control_type: 'Standard',
-                            standard_sample_id: '',
+                            standard_sample_id: this.getPlaceholderStandardId(),
                             duplicate_sample_id: '',
                             from_depth: fDepth || 0,
                             to_depth: '',
@@ -1943,6 +1956,20 @@
                             core_size: null,
                             comentarios: ''
                         });
+                    },
+
+                    // Al modificar el TO de una fila, el FROM de la siguiente fila original se sobrescribe con ese valor.
+                    // Length y la validación de baja recuperación se recalculan reactivamente (el comentario es manual).
+                    propagateTo(index) {
+                        let current = this.samples[index];
+                        if (!current || current.sample_type === 'Control') return;
+                        if (current.to_depth === '' || current.to_depth === null || isNaN(parseFloat(current.to_depth))) return;
+
+                        for (let i = index + 1; i < this.samples.length; i++) {
+                            if (this.samples[i].sample_type === 'Control') continue;
+                            this.samples[i].from_depth = current.to_depth;
+                            break;
+                        }
                     },
 
                     removeRow(index) {
