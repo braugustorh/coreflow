@@ -28,7 +28,7 @@ class DrillHoleSample extends Model
         'to_depth'       => 'decimal:2',
         'length'         => 'decimal:2',
         'sample_length'  => 'decimal:2',
-        'weight'         => 'decimal:2',
+        'weight'         => 'decimal:3',
         'sampled_at'     => 'datetime',
         'sent_date'      => 'date',
         'rush'           => 'boolean',

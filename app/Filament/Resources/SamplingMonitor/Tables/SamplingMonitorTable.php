@@ -115,7 +115,7 @@ class SamplingMonitorTable
 
                 TextColumn::make('drill_hole_samples_sum_weight')
                     ->label('Peso Total (kg)')
-                    ->numeric(2)
+                    ->numeric(3)
                     ->sortable()
                     ->suffix(' kg')
                     ->color('gray'),

@@ -777,7 +777,8 @@ class AgileCapture extends Page implements HasForms, HasTable
                     ->toggleable(),
                 TextInputColumn::make('weight')
                     ->label('Wght')
-                    ->rules(['nullable', 'numeric', 'min:0'])
+                    ->rules(['nullable', 'numeric', 'min:0', 'decimal:0,3'])
+                    ->step(0.001)
                     ->disabled(fn (DrillHoleSample $record): bool => !auth()->user()?->hasRole(['super_admin', 'Admin CoreFlow']) && ($record->is_archived || !empty($record->workOrder?->dispatch_date)))
                     ->sortable()
                     ->toggleable(),
@@ -994,7 +995,8 @@ class AgileCapture extends Page implements HasForms, HasTable
                                     TextInput::make('weight')
                                         ->label('Peso (kg)')
                                         ->numeric()
-                                        ->step(0.01)
+                                        ->step(0.001)
+                                        ->rules(['decimal:0,3'])
                                         ->live(onBlur: true)
                                         ->columnSpan(fn (?DrillHoleSample $record) => $record?->sample_type === 'Control' ? 1 : 2)
                                         ->helperText(function () {

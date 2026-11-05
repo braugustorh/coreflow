@@ -643,7 +643,7 @@ class ReviewDrillHoleSamples extends Page implements HasForms, HasTable
 
                 Tables\Columns\TextColumn::make('weight')
                     ->label('Peso (kg)')
-                    ->numeric(2)
+                    ->numeric(3)
                     ->sortable(),
 
                 Tables\Columns\TextColumn::make('comentarios')

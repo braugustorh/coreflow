@@ -1502,7 +1502,7 @@
                                         </td>
                                         <!-- Peso -->
                                         <td>
-                                            <input type="number" step="0.01" x-model="sample.weight" class="ac-grid-input"
+                                            <input type="number" step="0.001" x-model="sample.weight" class="ac-grid-input"
                                                 style="width: 70px;">
                                         </td>
                                         <!-- Comentarios -->
