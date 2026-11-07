@@ -13,6 +13,17 @@ class ActiveDrillHolesChart extends ChartWidget
     protected ?string $heading = 'Barrenos por Proyecto';
     protected static ?int $sort = 2;
 
+    public static function canView(): bool
+    {
+        $user = auth()->user();
+        if (!$user || $user->hasRole('Coreshack')) {
+            return false;
+        }
+
+        return $user->can('View:ActiveDrillHolesChart')
+            || $user->hasRole(['super_admin', 'Admin CoreFlow', 'Supervisor CoreS', 'Supervisor Coreshack', 'Geologo', 'Visor']);
+    }
+
     protected function getData(): array
     {
         $sedeId = $this->filters['sede_id'] ?? auth()->user()->sede_id;

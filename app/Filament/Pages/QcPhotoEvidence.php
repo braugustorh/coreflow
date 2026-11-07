@@ -35,7 +35,8 @@ class QcPhotoEvidence extends Page
     {
         $user = auth()->user();
         if (!$user) return false;
-        return $user->hasRole(['super_admin', 'Admin CoreFlow', 'Supervisor CoreS', 'Geologo'])
+        return $user->hasRole(['super_admin', 'Admin CoreFlow', 'Supervisor CoreS', 'Geologo', 'Coreshack'])
+            || $user->can('View:QcPhotoEvidence')
             || $user->can('View:AgileCapture')
             || $user->can('View:SamplingMonitor');
     }

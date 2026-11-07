@@ -1442,7 +1442,7 @@
                                         </td>
                                         <!-- Tipo Muestra -->
                                         <td>
-                                            <select x-model="sample.sample_type" class="ac-grid-input">
+                                            <select x-model="sample.sample_type" class="ac-grid-input" x-on:change="onSampleTypeChange(sample, index)">
                                                 <option value="O">Original</option>
                                                 <option value="Control">Control</option>
                                             </select>
@@ -1770,15 +1770,31 @@
                             return m ? parseInt(m[1], 10) : null;
                         };
 
+                        const isEligible = (s) => {
+                            if (!s) return false;
+                            let type = String(s.sample_type || 'O').trim().toUpperCase();
+                            if (type !== 'CONTROL') return true;
+                            let ctrl = String(s.control_type || '').trim().toUpperCase();
+                            return ctrl.includes('DUP') || Boolean(s.duplicate_sample_id);
+                        };
+
                         if (this.coreSizeScope === 'all') {
                             this.samples.forEach(s => {
-                                s.core_size = this.selectedCoreSize;
+                                if (isEligible(s)) {
+                                    s.core_size = this.selectedCoreSize;
+                                } else {
+                                    s.core_size = null;
+                                }
                             });
                         } else if (this.coreSizeScope === 'single') {
                             let start = String(this.coreSizeStart || '').trim().toUpperCase();
                             this.samples.forEach(s => {
                                 if (String(s.sample_number || '').trim().toUpperCase() === start) {
-                                    s.core_size = this.selectedCoreSize;
+                                    if (isEligible(s)) {
+                                        s.core_size = this.selectedCoreSize;
+                                    } else {
+                                        s.core_size = null;
+                                    }
                                 }
                             });
                         } else if (this.coreSizeScope === 'range') {
@@ -1792,7 +1808,11 @@
                                 this.samples.forEach(s => {
                                     let val = extractNum(s.sample_number);
                                     if (val !== null && val >= startNum && val <= endNum) {
-                                        s.core_size = this.selectedCoreSize;
+                                        if (isEligible(s)) {
+                                            s.core_size = this.selectedCoreSize;
+                                        } else {
+                                            s.core_size = null;
+                                        }
                                     }
                                 });
                             } else {
@@ -1803,10 +1823,18 @@
                                 this.samples.forEach(s => {
                                     let numStr = String(s.sample_number || '').trim().toUpperCase();
                                     if (numStr === s1 || numStr === s2) {
-                                        s.core_size = this.selectedCoreSize;
+                                        if (isEligible(s)) {
+                                            s.core_size = this.selectedCoreSize;
+                                        } else {
+                                            s.core_size = null;
+                                        }
                                         inRange = !inRange;
                                     } else if (inRange) {
-                                        s.core_size = this.selectedCoreSize;
+                                        if (isEligible(s)) {
+                                            s.core_size = this.selectedCoreSize;
+                                        } else {
+                                            s.core_size = null;
+                                        }
                                     }
                                 });
                             }
@@ -1929,15 +1957,61 @@
                         return std ? std.id : '';
                     },
 
+                    getLastOriginalToDepth(beforeIndex = null) {
+                        let startIndex = beforeIndex !== null ? beforeIndex - 1 : this.samples.length - 1;
+                        for (let i = startIndex; i >= 0; i--) {
+                            let s = this.samples[i];
+                            if (s.sample_type !== 'Control' && s.to_depth !== '' && s.to_depth !== null && !isNaN(parseFloat(s.to_depth))) {
+                                return parseFloat(s.to_depth);
+                            }
+                        }
+                        return (this.lastToDepth !== undefined && this.lastToDepth !== null && !isNaN(parseFloat(this.lastToDepth)))
+                            ? parseFloat(this.lastToDepth)
+                            : 0;
+                    },
+
+                    recalculateNextOriginalFrom(fromIndex) {
+                        let targetDepth = this.getLastOriginalToDepth(fromIndex);
+                        for (let i = fromIndex + 1; i < this.samples.length; i++) {
+                            if (this.samples[i].sample_type === 'Control') continue;
+                            this.samples[i].from_depth = targetDepth;
+                            break;
+                        }
+                    },
+
+                    onSampleTypeChange(sample, index) {
+                        if (sample.sample_type === 'Control') {
+                            sample.from_depth = '';
+                            sample.to_depth = '';
+                            sample.sample_length = '';
+
+                            let ctrl = String(sample.control_type || '').trim().toUpperCase();
+                            if (!ctrl.includes('DUP') && !sample.duplicate_sample_id) {
+                                sample.core_size = null;
+                            }
+
+                            this.recalculateNextOriginalFrom(index);
+                        } else {
+                            sample.from_depth = this.getLastOriginalToDepth(index);
+                            if (sample.to_depth !== '' && sample.to_depth !== null && !isNaN(parseFloat(sample.to_depth))) {
+                                this.propagateTo(index);
+                            }
+                        }
+                    },
+
                     onControlTypeChange(sample) {
                         if (sample.control_type === 'Standard' && !sample.standard_sample_id) {
                             sample.standard_sample_id = this.getPlaceholderStandardId();
+                        }
+                        let ctrl = String(sample.control_type || '').trim().toUpperCase();
+                        if (!ctrl.includes('DUP') && !sample.duplicate_sample_id) {
+                            sample.core_size = null;
                         }
                     },
 
                     addEmptyRow() {
                         let sNumber = this.samples.length === 0 ? this.nextSampleNum : this.incrementSampleNumber(this.samples[this.samples.length - 1].sample_number);
-                        let fDepth = this.samples.length === 0 ? this.lastToDepth : this.samples[this.samples.length - 1].to_depth;
+                        let fDepth = this.getLastOriginalToDepth();
                         let sDate = new Date().toISOString().slice(0, 10);
 
                         this.samples.push({
@@ -1948,7 +2022,7 @@
                             control_type: 'Standard',
                             standard_sample_id: this.getPlaceholderStandardId(),
                             duplicate_sample_id: '',
-                            from_depth: fDepth || 0,
+                            from_depth: fDepth,
                             to_depth: '',
                             sample_length: '',
                             weight: '',
@@ -1994,21 +2068,22 @@
                         let sample = this.samples[index];
 
                         // 1. Validar campos obligatorios generales
-                        if (!sample.sample_number || sample.sample_number.trim() === '') {
+                        let rawNum = String(sample.sample_number || '').trim();
+                        if (!rawNum) {
                             return 'Falta No. Muestra';
                         }
 
-                        // Validar duplicados en el lote o base de datos
-                        let sampleNum = sample.sample_number;
-                        if (sampleNum) {
-                            if (this.dbSampleNumbers.includes(sampleNum)) {
-                                return 'Muestra Registrada (DB)';
-                            }
-                            for (let i = 0; i < this.samples.length; i++) {
-                                if (i === index) continue;
-                                if (this.samples[i].sample_number === sampleNum) {
-                                    return 'Muestra Duplicada';
-                                }
+                        // Validar duplicados en el lote o base de datos (normalizado sin espacios y mayúsculas)
+                        let sampleNumUpper = rawNum.toUpperCase();
+                        let dbNormalized = (this.dbSampleNumbers || []).map(n => String(n || '').trim().toUpperCase());
+                        if (dbNormalized.includes(sampleNumUpper)) {
+                            return 'Muestra Registrada (DB)';
+                        }
+                        for (let i = 0; i < this.samples.length; i++) {
+                            if (i === index) continue;
+                            let otherNum = String(this.samples[i].sample_number || '').trim().toUpperCase();
+                            if (otherNum === sampleNumUpper && otherNum !== '') {
+                                return 'Muestra Duplicada';
                             }
                         }
 

@@ -15,6 +15,10 @@ class Dashboard extends \Filament\Pages\Dashboard
 
     public function filtersForm(Schema $schema): Schema
     {
+        if (Auth::user()?->hasRole('Coreshack')) {
+            return $schema->schema([]);
+        }
+
         return $schema
             ->schema([
                 Select::make('sede_id')

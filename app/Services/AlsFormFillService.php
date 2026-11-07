@@ -48,7 +48,12 @@ class AlsFormFillService
         // Fecha de envío capturada (sin respaldo a la fecha actual)
         $sentDate = $samples
             ->whereNotNull('sent_date')
-            ->first()?->sent_date?->format('d/m/Y') ?? '';
+            ->first()?->sent_date?->format('d/m/Y')
+            ?? $workOrder->dispatch_date?->format('d/m/Y')
+            ?? '';
+
+        // Fecha de recepción del laboratorio (vacía si el laboratorio aún no ha recibido la orden)
+        $receptionDate = $workOrder->reception_date?->format('d/m/Y') ?? '';
 
         // Proyecto tomado del barreno (primero las muestras no QC)
         $isControl = fn ($s) => strtolower((string) $s->sample_type) === 'control' || ! empty($s->control_type);
@@ -67,16 +72,17 @@ class AlsFormFillService
 
         // 4. Construir el payload de campos para pdf.co
         $fields = $this->buildFields(
-            workOrder:    $workOrder,
-            companyName:  $companyName,
-            supervisor:   $supervisor,
-            phone:        $phone,
-            sentDate:     $sentDate,
-            projectName:  $projectName,
-            blankGra09:   $blankGra09,
-            isRush:       $isRush,
-            totalSamples: $totalSamples,
-            groups:       $groups,
+            workOrder:     $workOrder,
+            companyName:   $companyName,
+            supervisor:    $supervisor,
+            phone:         $phone,
+            sentDate:      $sentDate,
+            receptionDate: $receptionDate,
+            projectName:   $projectName,
+            blankGra09:    $blankGra09,
+            isRush:        $isRush,
+            totalSamples:  $totalSamples,
+            groups:        $groups,
         );
 
         // 5. Llamar a la API de pdf.co
@@ -103,6 +109,7 @@ class AlsFormFillService
         string    $supervisor,
         string    $phone,
         string    $sentDate,
+        string    $receptionDate,
         string    $projectName,
         bool      $blankGra09,
         bool      $isRush,
@@ -111,17 +118,18 @@ class AlsFormFillService
     ): array {
         $fields = [
             // --- Cabecera ---
-            ['fieldName' => 'Company name', 'text' => $companyName],
-            ['fieldName' => 'Submitted by',  'text' => $supervisor],
-            ['fieldName' => 'Contact number', 'text' => $phone],
+            ['fieldName' => 'Company name',      'text' => $companyName],
+            ['fieldName' => 'Submitted by',      'text' => $supervisor],
+            ['fieldName' => 'Contact number',    'text' => $phone],
             ['fieldName' => 'Autorised by Name', 'text' => $supervisor],
-            ['fieldName' => 'Project ID',    'text' => $projectName],
-            ['fieldName' => 'Dispatch#',     'text' => $workOrder->work_order_code],
-            ['fieldName' => 'Workorder#',    'text' => $workOrder->work_order_code],
-            ['fieldName' => 'PO#',           'text' => $workOrder->work_order_code],
-            ['fieldName' => 'PO #',          'text' => $workOrder->work_order_code],
-            ['fieldName' => 'Date',          'text' => $sentDate],
-            ['fieldName' => 'MUESTRAS',      'text' => (string) $totalSamples],
+            ['fieldName' => 'Project ID',        'text' => $projectName],
+            ['fieldName' => 'Dispatch#',         'text' => $workOrder->work_order_code],
+            ['fieldName' => 'Workorder#',        'text' => ''], // Orden de trabajo del laboratorio (dejar en blanco)
+            ['fieldName' => 'PO#',               'text' => $workOrder->work_order_code],
+            ['fieldName' => 'PO #',              'text' => $workOrder->work_order_code],
+            ['fieldName' => 'Date',              'text' => $receptionDate], // Fecha de recepción en laboratorio
+            ['fieldName' => 'date shipped',      'text' => $sentDate], // Fecha de envío
+            ['fieldName' => 'MUESTRAS',          'text' => (string) $totalSamples],
 
             // --- Checkboxes ---
             ['fieldName' => 'Rush',              'text' => $isRush ? 'true' : 'false'],
@@ -161,7 +169,15 @@ class AlsFormFillService
         $response = Http::withHeaders([
             'x-api-key'    => $apiKey,
             'Content-Type' => 'application/json',
-        ])->timeout(60)->post(self::API_URL, [
+        ])
+        ->withOptions([
+            'curl' => [
+                CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4,
+            ],
+        ])
+        ->connectTimeout(15)
+        ->timeout(60)
+        ->post(self::API_URL, [
             'url'     => $template,
             'fields'  => $fields,
             'flatten' => true,   // PDF no editable en el output
@@ -192,7 +208,16 @@ class AlsFormFillService
         }
 
         // Descargar el PDF binario desde la URL temporal (válida 60 min)
-        $download = Http::timeout(30)->get($pdfUrl);
+        // Se fuerza IPv4 y reintentos para evitar cuelgues de resolución DNS (IPv6) en entornos locales Windows/Laragon
+        $download = Http::withOptions([
+            'curl' => [
+                CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4,
+            ],
+        ])
+        ->connectTimeout(15)
+        ->timeout(60)
+        ->retry(3, 1000)
+        ->get($pdfUrl);
 
         if ($download->failed()) {
             abort(500, 'No se pudo descargar el PDF generado por pdf.co.');

@@ -119,7 +119,7 @@ class DrillHoleSampleResource extends Resource
                         ->live()
                         ->required()
                         ->disabled(fn(?DrillHoleSample $record): bool => $record?->isSent() ?? false)
-                        ->afterStateUpdated(function (Set $set, ?string $state) {
+                        ->afterStateUpdated(function (Get $get, Set $set, ?string $state) {
                             if (strtoupper(trim((string)$state)) !== 'CONTROL') {
                                 $set('control_type', null);
                                 $set('standard_sample_id', null);
@@ -129,6 +129,10 @@ class DrillHoleSampleResource extends Resource
                                 $set('to_depth', null);
                                 $set('length', null);
                                 $set('sample_length', null);
+                                $ctrl = strtoupper(trim((string) $get('control_type')));
+                                if (!str_contains($ctrl, 'DUP')) {
+                                    $set('core_size', null);
+                                }
                             }
                         }),
 
@@ -218,6 +222,7 @@ class DrillHoleSampleResource extends Resource
                             }
                             if (!str_contains($val, 'DUP')) {
                                 $set('duplicate_sample_id', null);
+                                $set('core_size', null);
                             }
                         }),
 
@@ -290,7 +295,8 @@ class DrillHoleSampleResource extends Resource
                             'NQ' => 'NQ',
                             'BQ' => 'BQ',
                         ])
-                        ->disabled(fn(?DrillHoleSample $record): bool => $record?->isSent() ?? false)
+                        ->visible(fn(Get $get) => strtoupper(trim((string) $get('sample_type'))) !== 'CONTROL' || str_contains(strtoupper(trim((string) $get('control_type'))), 'DUP'))
+                        ->disabled(fn(?DrillHoleSample $record): bool => ($record?->isSent() ?? false) || ($record && !$record->isEligibleForCoreSize()))
                         ->nullable(),
 
                     Forms\Components\Textarea::make('comentarios')
@@ -674,6 +680,7 @@ class DrillHoleSampleResource extends Resource
 
                             if (empty($barrenoCoreSize)) {
                                 $missingCoreSizeQuery = DrillHoleSample::whereIn('id', $targetIds)
+                                    ->eligibleForCoreSize()
                                     ->where(function ($q) {
                                         $q->whereNull('core_size')->orWhere('core_size', '');
                                     });

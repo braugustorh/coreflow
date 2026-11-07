@@ -160,8 +160,11 @@ class SampleValidationService
                         $otherDraftMatches = collect();
 
                         foreach (array_chunk($barrenoSampleNumbers, 500) as $chunkNums) {
-                            $off = DrillHoleSample::where('status', 'official')
-                                ->where('proyecto_id', $pId)
+                            $off = DrillHoleSample::where('proyecto_id', $pId)
+                                ->where(function ($q) {
+                                    $q->where('status', 'official')
+                                      ->orWhere('capture_source', 'manual');
+                                })
                                 ->whereIn('sample_number', $chunkNums)
                                 ->pluck('sample_number')
                                 ->all();
@@ -296,7 +299,7 @@ class SampleValidationService
                         $sNum  = $sample->sample_number;
 
                         if (!empty($officialByProyecto[$pId][$sNum])) {
-                            $errors[] = 'El número de muestra ya existe en registros oficiales de este proyecto.';
+                            $errors[] = 'El número de muestra ya existe en registros oficiales o manuales de este proyecto.';
                         }
 
                         if (!empty($historicalByProyecto[$pId][$sNum])) {

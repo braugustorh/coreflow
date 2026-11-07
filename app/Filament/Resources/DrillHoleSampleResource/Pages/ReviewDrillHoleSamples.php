@@ -200,7 +200,12 @@ class ReviewDrillHoleSamples extends Page implements HasForms, HasTable
                     $updatedCount = 0;
                     if (!empty($targetIds)) {
                         $updatedCount = DrillHoleSample::whereIn('id', $targetIds)
+                            ->eligibleForCoreSize()
                             ->update(['core_size' => $coreSize]);
+
+                        DrillHoleSample::whereIn('id', $targetIds)
+                            ->ineligibleForCoreSize()
+                            ->update(['core_size' => null]);
                     }
 
                     // Re-validar este barreno
@@ -436,7 +441,7 @@ class ReviewDrillHoleSamples extends Page implements HasForms, HasTable
 
                     $draftsWithErrors = (clone $baseQuery)->whereNotNull('errors')->count();
                     $draftsWithoutWorkOrder = (clone $baseQuery)->whereNull('work_order_id')->count();
-                    $draftsWithoutCoreSize = (clone $baseQuery)->whereNull('core_size')->count();
+                    $draftsWithoutCoreSize = (clone $baseQuery)->eligibleForCoreSize()->whereNull('core_size')->count();
 
                     if ($draftsWithErrors > 0 || $draftsWithoutWorkOrder > 0 || $draftsWithoutCoreSize > 0) {
                         $messages = [];
@@ -929,7 +934,12 @@ class ReviewDrillHoleSamples extends Page implements HasForms, HasTable
                             $updatedCount = 0;
                             if (!empty($targetIds)) {
                                 $updatedCount = DrillHoleSample::whereIn('id', $targetIds)
+                                    ->eligibleForCoreSize()
                                     ->update(['core_size' => $coreSize]);
+
+                                DrillHoleSample::whereIn('id', $targetIds)
+                                    ->ineligibleForCoreSize()
+                                    ->update(['core_size' => null]);
                             }
 
                             // Re-validar este barreno
@@ -1094,6 +1104,7 @@ class ReviewDrillHoleSamples extends Page implements HasForms, HasTable
 
         // 4. Validar en 1 consulta que todas las muestras seleccionadas tengan Core Size
         $missingCoreSizeQuery = DrillHoleSample::whereIn('id', $targetIds)
+            ->eligibleForCoreSize()
             ->where(function ($q) {
                 $q->whereNull('core_size')->orWhere('core_size', '');
             });

@@ -97,6 +97,78 @@ class DrillHoleSample extends Model
         return $count >= self::QC_PHOTOS_REQUIRED;
     }
 
+    // ─── Clasificación de Muestras y Elegibilidad Core Size ─────────────────
+
+    /**
+     * Determina si la muestra es original (no control).
+     */
+    public function isOriginal(): bool
+    {
+        $type = strtoupper(trim((string) $this->sample_type));
+        return ($type === 'O' || $type === 'ORIGINAL' || ($type === '' && empty($this->control_type)));
+    }
+
+    /**
+     * Determina si la muestra es un duplicado de control.
+     */
+    public function isDuplicate(): bool
+    {
+        if ($this->duplicate_sample_id !== null) {
+            return true;
+        }
+
+        $ctrl = strtoupper(trim((string) $this->control_type));
+        return str_contains($ctrl, 'DUP');
+    }
+
+    /**
+     * Determina si la muestra es un Blanco.
+     */
+    public function isBlank(): bool
+    {
+        $ctrl = strtoupper(trim((string) $this->control_type));
+        return str_contains($ctrl, 'BLANK')
+            || str_contains($ctrl, 'BLK')
+            || str_contains($ctrl, 'BLANCO')
+            || $ctrl === 'BCO';
+    }
+
+    /**
+     * Determina si la muestra es un Estándar.
+     */
+    public function isStandard(): bool
+    {
+        if ($this->standard_sample_id !== null) {
+            return true;
+        }
+
+        $ctrl = strtoupper(trim((string) $this->control_type));
+        return str_contains($ctrl, 'STAND')
+            || str_starts_with($ctrl, 'STD-')
+            || $ctrl === 'ESTANDAR'
+            || $ctrl === 'ESTÁNDAR';
+    }
+
+    /**
+     * Determina si la muestra es elegible para Core Size (Solo Originales y Duplicados).
+     */
+    public function isEligibleForCoreSize(): bool
+    {
+        if ($this->isBlank() || $this->isStandard()) {
+            return false;
+        }
+
+        return $this->isOriginal() || $this->isDuplicate();
+    }
+
+    /**
+     * Determina si la muestra NO debe tener Core Size (Blancos y Estándares).
+     */
+    public function isIneligibleForCoreSize(): bool
+    {
+        return !$this->isEligibleForCoreSize();
+    }
+
     // ─── Baja Recuperación (Sample Length < Length) ─────────────────────────
 
     /**
@@ -223,6 +295,61 @@ class DrillHoleSample extends Model
     public function scopeMissingQcPhotos(Builder $query): Builder
     {
         return $query->requiringQcPhotos()->has('qcPhotos', '<', self::QC_PHOTOS_REQUIRED);
+    }
+
+    /**
+     * Scope: Solo muestras que pueden tener Core Size (Originales y Duplicados).
+     * Excluye expresamente Blancos y Estándares.
+     */
+    public function scopeEligibleForCoreSize(Builder $query): Builder
+    {
+        return $query->where(function (Builder $q) {
+            // Originales
+            $q->where(function (Builder $orig) {
+                $orig->whereRaw("UPPER(TRIM(sample_type)) = 'O'")
+                    ->orWhereRaw("UPPER(TRIM(sample_type)) = 'ORIGINAL'")
+                    ->orWhere(fn($s) => $s->whereNull('sample_type')->whereNull('control_type'));
+            })
+            // O Duplicados
+            ->orWhere(function (Builder $dup) {
+                $dup->whereNotNull('duplicate_sample_id')
+                    ->orWhereRaw("UPPER(TRIM(control_type)) = 'DUPLICATE'")
+                    ->orWhereRaw("UPPER(TRIM(control_type)) LIKE '%DUP%'");
+            });
+        })->where(function (Builder $q) {
+            // Excluir explícitamente Blancos y Estándares
+            $q->where(function (Builder $sub) {
+                $sub->whereNull('standard_sample_id')
+                    ->where(function ($ctrl) {
+                        $ctrl->whereNull('control_type')
+                            ->orWhere(function ($c) {
+                                $c->whereRaw("UPPER(TRIM(control_type)) NOT LIKE '%STAND%'")
+                                  ->whereRaw("UPPER(TRIM(control_type)) NOT LIKE 'STD-%'")
+                                  ->whereRaw("UPPER(TRIM(control_type)) NOT LIKE '%BLANK%'")
+                                  ->whereRaw("UPPER(TRIM(control_type)) NOT LIKE '%BLK%'")
+                                  ->whereRaw("UPPER(TRIM(control_type)) NOT LIKE '%BLANCO%'")
+                                  ->whereRaw("UPPER(TRIM(control_type)) != 'BCO'");
+                            });
+                    });
+            });
+        });
+    }
+
+    /**
+     * Scope: Muestras inelegibles para Core Size (Blancos y Estándares).
+     */
+    public function scopeIneligibleForCoreSize(Builder $query): Builder
+    {
+        return $query->where(function (Builder $q) {
+            $q->whereNotNull('standard_sample_id')
+                ->orWhereRaw("UPPER(TRIM(control_type)) = 'STANDARD'")
+                ->orWhereRaw("UPPER(TRIM(control_type)) LIKE '%STAND%'")
+                ->orWhereRaw("UPPER(TRIM(control_type)) LIKE 'STD-%'")
+                ->orWhereRaw("UPPER(TRIM(control_type)) LIKE '%BLANK%'")
+                ->orWhereRaw("UPPER(TRIM(control_type)) LIKE '%BLK%'")
+                ->orWhereRaw("UPPER(TRIM(control_type)) LIKE '%BLANCO%'")
+                ->orWhereRaw("UPPER(TRIM(control_type)) = 'BCO'");
+        });
     }
 
     /**

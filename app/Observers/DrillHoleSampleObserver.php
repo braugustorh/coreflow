@@ -13,6 +13,12 @@ class DrillHoleSampleObserver
             $drillHoleSample->length = $drillHoleSample->to_depth - $drillHoleSample->from_depth;
         }
 
+        // Core Size solo permitido para muestras originales y duplicados.
+        // Blancos y Estándares no deben tener Core Size bajo ninguna circunstancia.
+        if ($drillHoleSample->isIneligibleForCoreSize()) {
+            $drillHoleSample->core_size = null;
+        }
+
         // Prevenir que se asigne una Work Order que ya fue enviada al laboratorio
         if ($drillHoleSample->isDirty('work_order_id') && $drillHoleSample->work_order_id) {
             $sentWo = WorkOrder::select('work_order_code')

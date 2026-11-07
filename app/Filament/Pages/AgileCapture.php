@@ -26,6 +26,7 @@ use Filament\Forms\Contracts\HasForms;
 use Filament\Forms\Form;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
+use Filament\Support\Enums\Width;
 use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
@@ -55,11 +56,16 @@ class AgileCapture extends Page implements HasForms, HasTable
     protected static ?int $navigationSort = 1;
     protected string $view = 'filament.pages.agile-capture';
 
+    public function getMaxContentWidth(): Width | string | null
+    {
+        return Width::Full;
+    }
+
     public static function canAccess(): bool
     {
         $user = auth()->user();
         if (!$user) return false;
-        return $user->hasRole(['super_admin', 'Admin CoreFlow', 'Supervisor CoreS', 'Geologo'])
+        return $user->hasRole(['super_admin', 'Admin CoreFlow', 'Supervisor CoreS', 'Geologo', 'Coreshack'])
             || $user->can('View:AgileCapture');
     }
 
@@ -212,14 +218,22 @@ class AgileCapture extends Page implements HasForms, HasTable
             $candidate = $rawNumber . '1';
         }
 
-        // Prevenir colisión si el número ya existe en el proyecto
+        // Prevenir colisión si el número ya existe en el proyecto o en el histórico
         if ($proyectoId) {
             $existingProjectNumbers = DrillHoleSample::where('proyecto_id', $proyectoId)
                 ->pluck('sample_number')
                 ->map(fn($n) => trim((string) $n))
                 ->flip();
 
-            while (isset($existingProjectNumbers[$candidate])) {
+            $existingHistNumbers = \App\Models\HistoricalSample::where(function ($q) use ($proyectoId) {
+                    $q->where('proyecto_id', $proyectoId)
+                      ->orWhereNull('proyecto_id');
+                })
+                ->pluck('sample_number')
+                ->map(fn($n) => trim((string) $n))
+                ->flip();
+
+            while (isset($existingProjectNumbers[$candidate]) || isset($existingHistNumbers[$candidate])) {
                 if (preg_match('/^(.*?)(\d+)$/', $candidate, $matches)) {
                     $prefix = $matches[1];
                     $digits = $matches[2];
@@ -264,7 +278,18 @@ class AgileCapture extends Page implements HasForms, HasTable
 
         $existingSampleNumbers = DrillHoleSample::where('proyecto_id', $this->barreno->proyecto_id)
             ->pluck('sample_number')
+            ->map(fn($n) => trim((string) $n))
             ->toArray();
+
+        $existingHistNumbers = \App\Models\HistoricalSample::where(function ($q) {
+                $q->where('proyecto_id', $this->barreno->proyecto_id)
+                  ->orWhereNull('proyecto_id');
+            })
+            ->pluck('sample_number')
+            ->map(fn($n) => trim((string) $n))
+            ->toArray();
+
+        $combinedSampleNumbers = array_values(array_unique(array_filter(array_merge($existingSampleNumbers, $existingHistNumbers))));
 
         $nextSampleNumber = $this->calculateNextSampleNumber($this->barreno->id, $this->barreno->proyecto_id);
 
@@ -278,7 +303,7 @@ class AgileCapture extends Page implements HasForms, HasTable
                 ? $lastSample->sampled_at->format('Y-m-d H:i:s')
                 : now()->format('Y-m-d H:i:s'),
             'existingIntervals' => $existingIntervals,
-            'existingSampleNumbers' => $existingSampleNumbers,
+            'existingSampleNumbers' => $combinedSampleNumbers,
             'maxDepth' => $this->barreno->max_depth,
         ]);
 
@@ -348,7 +373,8 @@ class AgileCapture extends Page implements HasForms, HasTable
                 $errors[] = "Fila " . ($index + 1) . ": El Proyecto es requerido.";
                 continue;
             }
-            if (empty($data['sample_number']) || trim((string)$data['sample_number']) === '') {
+            $data['sample_number'] = trim((string)($data['sample_number'] ?? ''));
+            if ($data['sample_number'] === '') {
                 $errors[] = "Fila " . ($index + 1) . ": El Número de Muestra es requerido.";
                 continue;
             }
@@ -405,16 +431,18 @@ class AgileCapture extends Page implements HasForms, HasTable
                 }
             }
 
-            // Validar duplicado en el mismo lote
+            // Validar duplicado en el mismo lote (insensible a mayúsculas/minúsculas y espacios)
             $duplicateInBatch = false;
+            $currentNumUpper = mb_strtoupper($data['sample_number']);
             foreach ($samplesData as $checkIndex => $checkData) {
-                if ($checkIndex !== $index && $checkData['sample_number'] === $data['sample_number']) {
+                $otherNumUpper = mb_strtoupper(trim((string)($checkData['sample_number'] ?? '')));
+                if ($checkIndex !== $index && $otherNumUpper === $currentNumUpper && $currentNumUpper !== '') {
                     $duplicateInBatch = true;
                     break;
                 }
             }
             if ($duplicateInBatch) {
-                $errors[] = "Fila " . ($index + 1) . ": Número de muestra duplicado en el lote.";
+                $errors[] = "Fila " . ($index + 1) . ": Número de muestra duplicado en el lote ({$data['sample_number']}).";
                 continue;
             }
 
@@ -469,6 +497,12 @@ class AgileCapture extends Page implements HasForms, HasTable
                 }
                 if (($data['control_type'] ?? '') !== 'Duplicate') {
                     $data['duplicate_sample_id'] = null;
+                }
+
+                // Core Size solo permitido para Duplicados; Blancos y Estándares no deben tener Core Size
+                $ctrl = strtoupper(trim((string)($data['control_type'] ?? '')));
+                if (!str_contains($ctrl, 'DUP') && empty($data['duplicate_sample_id'])) {
+                    $data['core_size'] = null;
                 }
             } else {
                 // Si es Original, forzar controles a null
@@ -532,10 +566,8 @@ class AgileCapture extends Page implements HasForms, HasTable
                 $existingIntervals->push((object) ['from_depth' => $fd, 'to_depth' => $td]);
             }
 
-            DrillHoleSample::create($data);
-            $savedCount++;
+            $preparedPayloads[] = $data;
         }
-
 
         if (count($errors) > 0) {
             $errorMsg = implode('<br>', $errors);
@@ -545,6 +577,35 @@ class AgileCapture extends Page implements HasForms, HasTable
                 ->danger()
                 ->persistent()
                 ->send();
+            return;
+        }
+
+        try {
+            DB::transaction(function () use ($preparedPayloads, &$savedCount) {
+                foreach ($preparedPayloads as $payload) {
+                    DrillHoleSample::create($payload);
+                    $savedCount++;
+                }
+            });
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::error('[AgileCapture::saveBatch] Error transaccional al guardar lote: ' . $e->getMessage(), [
+                'file'  => $e->getFile(),
+                'line'  => $e->getLine(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            $isDuplicateViolation = str_contains($e->getMessage(), '1062') || (string)$e->getCode() === '23000';
+            $errorMsg = $isDuplicateViolation
+                ? 'Colisión de número de muestra en la base de datos. Verifique que no se hayan registrado duplicados concurrentemente.'
+                : 'Ocurrió un error inesperado al guardar el lote: ' . $e->getMessage();
+
+            \Filament\Notifications\Notification::make()
+                ->title('Error al guardar el lote')
+                ->body($errorMsg)
+                ->danger()
+                ->persistent()
+                ->send();
+            return;
         }
 
         if ($savedCount > 0) {
@@ -592,7 +653,18 @@ class AgileCapture extends Page implements HasForms, HasTable
             $proyectoId = DrillHole::find($this->selectedBarrenoId)?->proyecto_id;
             $existingSampleNumbers = DrillHoleSample::where('proyecto_id', $proyectoId)
                 ->pluck('sample_number')
+                ->map(fn($n) => trim((string) $n))
                 ->toArray();
+
+            $existingHistNumbers = \App\Models\HistoricalSample::where(function ($q) use ($proyectoId) {
+                    $q->where('proyecto_id', $proyectoId)
+                      ->orWhereNull('proyecto_id');
+                })
+                ->pluck('sample_number')
+                ->map(fn($n) => trim((string) $n))
+                ->toArray();
+
+            $combinedSampleNumbers = array_values(array_unique(array_filter(array_merge($existingSampleNumbers, $existingHistNumbers))));
 
             $nextSampleNumber = $this->calculateNextSampleNumber($this->selectedBarrenoId, $proyectoId);
 
@@ -601,7 +673,7 @@ class AgileCapture extends Page implements HasForms, HasTable
                 'nextSampleNumber' => $nextSampleNumber,
                 'fromDepth' => $lastOriginalSample ? $lastOriginalSample->to_depth : 0,
                 'existingIntervals' => $existingIntervals,
-                'existingSampleNumbers' => $existingSampleNumbers,
+                'existingSampleNumbers' => $combinedSampleNumbers,
             ]);
         }
     }
@@ -983,6 +1055,7 @@ class AgileCapture extends Page implements HasForms, HasTable
                                             'NQ' => 'NQ (47.6 mm)',
                                             'BQ' => 'BQ (36.4 mm)',
                                         ])
+                                        ->visible(fn(Get $get, ?DrillHoleSample $record) => ($record?->sample_type !== 'Control') || str_contains(strtoupper(trim((string) $get('control_type'))), 'DUP'))
                                         ->placeholder('Seleccione diámetro...'),
                                 ]),
                             ]),
@@ -1034,6 +1107,7 @@ class AgileCapture extends Page implements HasForms, HasTable
                                             }
                                             if (!str_contains($val, 'DUP')) {
                                                 $set('duplicate_sample_id', null);
+                                                $set('core_size', null);
                                             }
                                         })
                                         ->visible(fn (?DrillHoleSample $record) => $record?->sample_type === 'Control')
@@ -1221,6 +1295,7 @@ class AgileCapture extends Page implements HasForms, HasTable
                             }
                             if (!str_contains($ctrl, 'DUP')) {
                                 $data['duplicate_sample_id'] = null;
+                                $data['core_size'] = null;
                             }
                         }
                         $record->update($data);
@@ -1339,7 +1414,7 @@ class AgileCapture extends Page implements HasForms, HasTable
                         }
 
                         if ($value === 'sin_asignar') {
-                            return $query->where(function (Builder $q) {
+                            return $query->eligibleForCoreSize()->where(function (Builder $q) {
                                 $q->whereNull('core_size')->orWhere('core_size', '');
                             });
                         }
@@ -1431,7 +1506,12 @@ class AgileCapture extends Page implements HasForms, HasTable
                         $updatedCount = 0;
                         if (!empty($targetIds)) {
                             $updatedCount = DrillHoleSample::whereIn('id', $targetIds)
+                                ->eligibleForCoreSize()
                                 ->update(['core_size' => $coreSize]);
+
+                            DrillHoleSample::whereIn('id', $targetIds)
+                                ->ineligibleForCoreSize()
+                                ->update(['core_size' => null]);
                         }
 
                         $this->flushCachedTableRecords();
@@ -1673,7 +1753,12 @@ class AgileCapture extends Page implements HasForms, HasTable
                         $updatedCount = 0;
                         if (!empty($targetIds)) {
                             $updatedCount = DrillHoleSample::whereIn('id', $targetIds)
+                                ->eligibleForCoreSize()
                                 ->update(['core_size' => $coreSize]);
+
+                            DrillHoleSample::whereIn('id', $targetIds)
+                                ->ineligibleForCoreSize()
+                                ->update(['core_size' => null]);
                         }
 
                         $this->flushCachedTableRecords();
@@ -1832,6 +1917,7 @@ class AgileCapture extends Page implements HasForms, HasTable
 
         if (empty($barrenoCoreSize)) {
             $missingCoreSizeQuery = DrillHoleSample::whereIn('id', $targetIds)
+                ->eligibleForCoreSize()
                 ->where(function ($q) {
                     $q->whereNull('core_size')->orWhere('core_size', '');
                 });

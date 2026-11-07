@@ -15,6 +15,17 @@ class DistrictStatsWidget extends BaseWidget
 
     protected static ?int $sort = 1;
 
+    public static function canView(): bool
+    {
+        $user = auth()->user();
+        if (!$user || $user->hasRole('Coreshack')) {
+            return false;
+        }
+
+        return $user->can('View:DistrictStatsWidget')
+            || $user->hasRole(['super_admin', 'Admin CoreFlow', 'Supervisor CoreS', 'Supervisor Coreshack', 'Geologo', 'Visor']);
+    }
+
     protected function getStats(): array
     {
         $sedeId = $this->filters['sede_id'] ?? auth()->user()->sede_id;

@@ -78,14 +78,25 @@ class ListDraftDrillHoles extends Page implements HasForms, HasTable
                         ->helperText('Fecha y hora en que se realizó el muestreo de este lote.'),
                 ])
                 ->action(function (array $data, SampleValidationService $service) {
-                    $path = Storage::disk('local')->path($data['csv_file']);
+                    $csvFilePath = is_array($data['csv_file']) ? reset($data['csv_file']) : $data['csv_file'];
+                    if ($csvFilePath instanceof \Livewire\Features\SupportFileUploads\TemporaryUploadedFile || $csvFilePath instanceof \Illuminate\Http\UploadedFile) {
+                        $path = $csvFilePath->getRealPath();
+                    } else {
+                        $path = Storage::disk('local')->path($csvFilePath);
+                    }
+                    $path = str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $path);
 
-                    if (!file_exists($path) || !is_readable($path)) {
+                    if (!file_exists($path)) {
                         Notification::make()->title('Error al leer el archivo.')->danger()->send();
                         return;
                     }
 
-                    $file   = fopen($path, 'r');
+                    $file = @fopen($path, 'r');
+                    if (!$file) {
+                        Notification::make()->title('Error al abrir el archivo.')->danger()->send();
+                        return;
+                    }
+
                     $header = fgetcsv($file);
 
                     if (!$header) {
@@ -175,6 +186,69 @@ class ListDraftDrillHoles extends Page implements HasForms, HasTable
                             ->body('Ya existen muestras registradas para: ' . implode(', ', $nombres) . '. Para evitar inconsistencias, no se puede duplicar la carga.')
                             ->danger()->persistent()->send();
                         return;
+                    }
+
+                    // ─── VALIDACIÓN 4.1: Sin números de muestra duplicados dentro del CSV ─
+                    $rawCsvSampleNumbers = [];
+                    foreach ($rows as $r) {
+                        $sNum = trim((string)($r['sample_number'] ?? ''));
+                        if ($sNum !== '') {
+                            $rawCsvSampleNumbers[] = $sNum;
+                        }
+                    }
+
+                    $csvUpperCounts = array_count_values(array_map('mb_strtoupper', $rawCsvSampleNumbers));
+                    $batchDuplicates = array_keys(array_filter($csvUpperCounts, fn($c) => $c > 1));
+
+                    if (count($batchDuplicates) > 0) {
+                        Notification::make()
+                            ->title('Error: Números de muestra duplicados en el CSV')
+                            ->body('El archivo contiene folios repetidos: ' . implode(', ', array_slice($batchDuplicates, 0, 10)) . (count($batchDuplicates) > 10 ? '...' : '') . '. Corrige el archivo antes de importar.')
+                            ->danger()->persistent()->send();
+                        return;
+                    }
+
+                    // ─── VALIDACIÓN 4.2: Sin colisión con muestras de la BD (DrillHoleSample / HistoricalSample) ─
+                    $projectIds = $existingBarrenos->pluck('proyecto_id')->filter()->unique()->values()->toArray();
+                    $uniqueSampleNumbers = array_values(array_unique($rawCsvSampleNumbers));
+
+                    if (!empty($uniqueSampleNumbers) && !empty($projectIds)) {
+                        $existingInDhs = DrillHoleSample::whereIn('proyecto_id', $projectIds)
+                            ->whereIn('sample_number', $uniqueSampleNumbers)
+                            ->with('barreno:id,nombre_barreno')
+                            ->get(['id', 'proyecto_id', 'barreno_id', 'sample_number']);
+
+                        if ($existingInDhs->isNotEmpty()) {
+                            $conflicts = $existingInDhs->map(function ($s) {
+                                $bName = $s->barreno?->nombre_barreno ?? 'ID ' . $s->barreno_id;
+                                return "{$s->sample_number} (en barreno {$bName})";
+                            })->take(10)->implode(', ');
+
+                            $extra = $existingInDhs->count() > 10 ? ' y ' . ($existingInDhs->count() - 10) . ' más' : '';
+
+                            Notification::make()
+                                ->title('Error: Muestras ya registradas en el proyecto')
+                                ->body("Los siguientes números de muestra ya existen en el sistema para este proyecto: {$conflicts}{$extra}. No se pueden duplicar folios.")
+                                ->danger()->persistent()->send();
+                            return;
+                        }
+
+                        $existingInHist = \App\Models\HistoricalSample::where(function ($q) use ($projectIds) {
+                                $q->whereIn('proyecto_id', $projectIds)
+                                  ->orWhereNull('proyecto_id');
+                            })
+                            ->whereIn('sample_number', $uniqueSampleNumbers)
+                            ->pluck('sample_number')
+                            ->take(10)
+                            ->toArray();
+
+                        if (!empty($existingInHist)) {
+                            Notification::make()
+                                ->title('Error: Muestras existentes en el registro histórico')
+                                ->body('Los siguientes folios ya existen en el catálogo histórico de muestras: ' . implode(', ', $existingInHist) . '. Asigne folios no utilizados.')
+                                ->danger()->persistent()->send();
+                            return;
+                        }
                     }
 
                     // ─── VALIDACIÓN 5: Estándares referenciados existen en catálogo ──
@@ -289,7 +363,7 @@ class ListDraftDrillHoles extends Page implements HasForms, HasTable
                             'to_depth'               => $toDepth,
                             'length'                 => $drilledLen,
                             'sample_length'          => $sampleLen,
-                            'sample_number'          => $row['sample_number'] ?? null,
+                            'sample_number'          => isset($row['sample_number']) && trim((string)$row['sample_number']) !== '' ? trim((string)$row['sample_number']) : null,
                             'sample_type'            => $row['sample_type']   ?? 'O',
                             'weight'                 => $weight,
                             'comentarios'            => $comments,
@@ -309,41 +383,62 @@ class ListDraftDrillHoles extends Page implements HasForms, HasTable
                         ];
                     };
 
-                    // Paso A: Insertar originales
-                    foreach ($originalRows as $row) {
-                        $payload = $buildBase($row);
-                        $payload['sample_type'] = 'O';
-                        $sample  = DrillHoleSample::create($payload);
+                    \Illuminate\Support\Facades\Log::info('[ImportDebug] Ready to insert. originalRows: ' . count($originalRows) . ' | controlRows: ' . count($controlRows));
 
-                        if (!empty($row['sample_number'])) {
-                            $insertedSampleIds[$row['sample_number']] = $sample->id;
-                        }
-                        $importedCount++;
-                    }
+                    try {
+                        \Illuminate\Support\Facades\DB::transaction(function () use ($originalRows, $controlRows, $buildBase, &$insertedSampleIds, &$importedCount, $csvSampleNumbers, $standardsByName) {
+                            // Paso A: Insertar originales
+                            foreach ($originalRows as $row) {
+                                $payload = $buildBase($row);
+                                $payload['sample_type'] = 'O';
+                                $sample  = DrillHoleSample::create($payload);
 
-                    // Paso B: Insertar controles
-                    foreach ($controlRows as $row) {
-                        $payload    = $buildBase($row);
-                        $payload['sample_type'] = 'Control';
-                        $controlRaw = trim($row['control_type'] ?? '');
+                                if (!empty($payload['sample_number'])) {
+                                    $insertedSampleIds[$payload['sample_number']] = $sample->id;
+                                }
+                                $importedCount++;
+                            }
 
-                        $payload['from_depth']    = null;
-                        $payload['to_depth']      = null;
-                        $payload['length']        = null;
-                        $payload['sample_length'] = null;
+                            // Paso B: Insertar controles
+                            foreach ($controlRows as $row) {
+                                $payload    = $buildBase($row);
+                                $payload['sample_type'] = 'Control';
+                                $controlRaw = trim($row['control_type'] ?? '');
 
-                        if ($this->isBlankControlType($controlRaw)) {
-                            $payload['control_type'] = 'Blank-ML';
-                        } elseif (isset($csvSampleNumbers[$controlRaw])) {
-                            $payload['control_type']        = 'Duplicate';
-                            $payload['duplicate_sample_id'] = $insertedSampleIds[$controlRaw] ?? null;
-                        } else {
-                            $payload['control_type']       = 'Standard';
-                            $payload['standard_sample_id'] = $standardsByName[$controlRaw]['id'] ?? null;
-                        }
+                                $payload['from_depth']    = null;
+                                $payload['to_depth']      = null;
+                                $payload['length']        = null;
+                                $payload['sample_length'] = null;
 
-                        DrillHoleSample::create($payload);
-                        $importedCount++;
+                                if ($this->isBlankControlType($controlRaw)) {
+                                    $payload['control_type'] = 'Blank-ML';
+                                } elseif (isset($csvSampleNumbers[$controlRaw])) {
+                                    $payload['control_type']        = 'Duplicate';
+                                    $payload['duplicate_sample_id'] = $insertedSampleIds[$controlRaw] ?? null;
+                                } else {
+                                    $payload['control_type']       = 'Standard';
+                                    $payload['standard_sample_id'] = $standardsByName[$controlRaw]['id'] ?? null;
+                                }
+
+                                DrillHoleSample::create($payload);
+                                $importedCount++;
+                            }
+                        });
+                    } catch (\Throwable $e) {
+                        \Illuminate\Support\Facades\Log::error('[ImportDraftDrillHoles] Error durante importación CSV: ' . $e->getMessage(), [
+                            'trace' => $e->getTraceAsString(),
+                        ]);
+
+                        $isDuplicateViolation = str_contains($e->getMessage(), '1062') || (string)$e->getCode() === '23000';
+                        $body = $isDuplicateViolation
+                            ? 'Colisión de número de muestra detectada durante la inserción en base de datos. Ningún registro fue importado.'
+                            : 'Ocurrió un error inesperado al procesar el archivo: ' . $e->getMessage();
+
+                        Notification::make()
+                            ->title('Error al importar archivo CSV')
+                            ->body($body)
+                            ->danger()->persistent()->send();
+                        return;
                     }
 
                     // ── Validación automática inmediata por barreno ───────
@@ -383,7 +478,7 @@ class ListDraftDrillHoles extends Page implements HasForms, HasTable
                         'drillHoleSamples as draft_samples_count' => fn(Builder $q) => $q->where('status', 'draft')->where('capture_source', 'import'),
                         'drillHoleSamples as errors_count' => fn(Builder $q) => $q->where('status', 'draft')->where('capture_source', 'import')->whereNotNull('errors'),
                         'drillHoleSamples as missing_wo_count' => fn(Builder $q) => $q->where('status', 'draft')->where('capture_source', 'import')->whereNull('work_order_id'),
-                        'drillHoleSamples as missing_cs_count' => fn(Builder $q) => $q->where('status', 'draft')->where('capture_source', 'import')->whereNull('core_size'),
+                        'drillHoleSamples as missing_cs_count' => fn(Builder $q) => $q->where('status', 'draft')->where('capture_source', 'import')->eligibleForCoreSize()->whereNull('core_size'),
                     ]);
 
                 if ($isAdmin) {
@@ -485,7 +580,7 @@ class ListDraftDrillHoles extends Page implements HasForms, HasTable
 
                 Tables\Filters\Filter::make('ready_to_officialize')
                     ->label('Solo listos para oficializar')
-                    ->query(fn(Builder $query) => $query->whereDoesntHave('drillHoleSamples', fn($q) => $q->where('status', 'draft')->where('capture_source', 'import')->where(fn($sub) => $sub->whereNotNull('errors')->orWhereNull('work_order_id')->orWhereNull('core_size')))),
+                    ->query(fn(Builder $query) => $query->whereDoesntHave('drillHoleSamples', fn($q) => $q->where('status', 'draft')->where('capture_source', 'import')->where(fn($sub) => $sub->whereNotNull('errors')->orWhereNull('work_order_id')->orWhere(fn($cs) => $cs->eligibleForCoreSize()->whereNull('core_size'))))),
             ])
             ->recordActions([
                 Actions\Action::make('review')
@@ -511,7 +606,7 @@ class ListDraftDrillHoles extends Page implements HasForms, HasTable
                             ->where(function($q) {
                                 $q->whereNotNull('errors')
                                   ->orWhereNull('work_order_id')
-                                  ->orWhereNull('core_size');
+                                  ->orWhere(fn($cs) => $cs->eligibleForCoreSize()->whereNull('core_size'));
                             })
                             ->exists();
 
