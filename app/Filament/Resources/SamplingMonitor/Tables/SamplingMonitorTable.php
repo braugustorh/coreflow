@@ -141,11 +141,11 @@ class SamplingMonitorTable
                 TextColumn::make('drill_hole_samples_min_sample_number')
                     ->label('Muestra Inicio')
                     ->searchable(
-                        query: fn(Builder $q, string $s) =>
-                        $q->whereHas(
+                        query: fn(Builder $query, string $search): Builder =>
+                        $query->whereHas(
                             'drillHoleSamples',
                             fn($sq) =>
-                            $sq->where('sample_number', 'like', "%{$s}%")
+                            $sq->where('sample_number', 'like', "%{$search}%")
                         )
                     )
                     ->badge()
@@ -257,12 +257,12 @@ class SamplingMonitorTable
                             ->update(['hole_status' => $state]);
                     })
                     ->sortable(
-                        query: fn(Builder $q, string $dir): Builder =>
-                        $q->orderBy(
+                        query: fn(Builder $query, string $direction): Builder =>
+                        $query->orderBy(
                             DrillHoleSample::select('hole_status')
                                 ->whereColumn('work_order_id', 'work_orders.id')
                                 ->limit(1),
-                            $dir
+                            $direction
                         )
                     ),
 
