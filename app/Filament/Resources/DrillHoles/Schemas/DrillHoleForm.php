@@ -22,6 +22,7 @@ class DrillHoleForm
     public static function configure(Schema $schema): Schema
     {
         $canEditAdvanced = auth()->user()?->hasAnyRole(['super_admin', 'super-admin', 'Administrador', 'Admin', 'Supervisor Coreshack', 'Supervisor','Admin CoreFlow']) ?? false;
+        $canEditTechSpecs = $canEditAdvanced || (auth()->user()?->hasAnyRole(['Geologo', 'Geólogo', 'Supervisor CoreS']) ?? false);
 
         return $schema
             ->columns(2)
@@ -165,7 +166,7 @@ class DrillHoleForm
                     Section::make('Especificaciones Técnicas')
                         ->description('Parámetros técnicos de la perforación.')
                         ->icon('heroicon-o-cog-6-tooth')
-                        ->disabled(!$canEditAdvanced)
+                        ->disabled(!$canEditTechSpecs)
                         ->columns(2)
                         ->schema([
                             TextInput::make('start_depth')
@@ -265,7 +266,12 @@ class DrillHoleForm
                                         return;
                                     }
 
-                                    $filePath = is_array($state) ? reset($state) : $state;
+                                    if (is_array($state)) {
+                                        $uploaded = array_filter($state, fn ($item) => $item instanceof TemporaryUploadedFile || $item instanceof \Illuminate\Http\UploadedFile);
+                                        $filePath = !empty($uploaded) ? end($uploaded) : end($state);
+                                    } else {
+                                        $filePath = $state;
+                                    }
 
                                     if (!$filePath) {
                                         return;
@@ -311,15 +317,15 @@ class DrillHoleForm
 
                                         if (!empty($extracted['planned'])) {
                                             $pl = $extracted['planned'];
-                                            if (isset($pl['easting']) && empty($get('planned_easting')))
+                                            if (isset($pl['easting']))
                                                 $set('planned_easting', $pl['easting']);
-                                            if (isset($pl['northing']) && empty($get('planned_northing')))
+                                            if (isset($pl['northing']))
                                                 $set('planned_northing', $pl['northing']);
-                                            if (isset($pl['elevation']) && empty($get('planned_elevation')))
+                                            if (isset($pl['elevation']))
                                                 $set('planned_elevation', $pl['elevation']);
-                                            if (isset($pl['dip']) && empty($get('planned_dip')))
+                                            if (isset($pl['dip']))
                                                 $set('planned_dip', $pl['dip']);
-                                            if (isset($pl['azimuth']) && empty($get('planned_azimuth')))
+                                            if (isset($pl['azimuth']))
                                                 $set('planned_azimuth', $pl['azimuth']);
                                         }
 
@@ -352,6 +358,7 @@ class DrillHoleForm
 
                             DatePicker::make('survey_date')
                                 ->label('Fecha del Levantamiento')
+                                ->format('Y-m-d')
                                 ->displayFormat('d/m/Y')
                                 ->columnSpan(1),
 
@@ -385,8 +392,8 @@ class DrillHoleForm
                                 ->label('Elevación Instalada')
                                 ->placeholder('Ej. 1143.176')
                                 ->numeric()
-                                ->maxValue(999999.99)
-                                ->step(0.01)
+                                ->maxValue(9999999.999)
+                                ->step(0.001)
                                 ->suffix('m.s.n.m.')
                                 ->disabled(fn(Get $get) => empty($get('survey_pdf_path')))
                                 ->dehydrated()
@@ -395,11 +402,11 @@ class DrillHoleForm
 
                             TextInput::make('dip')
                                 ->label('Dip Instalado')
-                                ->placeholder('Ej. -75.45')
+                                ->placeholder('Ej. -75.450')
                                 ->numeric()
                                 ->minValue(-90)
                                 ->maxValue(90)
-                                ->step(0.01)
+                                ->step(0.001)
                                 ->suffix('°')
                                 ->disabled(fn(Get $get) => empty($get('survey_pdf_path')))
                                 ->dehydrated()
@@ -408,11 +415,11 @@ class DrillHoleForm
 
                             TextInput::make('azimuth')
                                 ->label('Azimuth Instalado')
-                                ->placeholder('Ej. 46.54')
+                                ->placeholder('Ej. 46.540')
                                 ->numeric()
                                 ->minValue(0)
                                 ->maxValue(360)
-                                ->step(0.01)
+                                ->step(0.001)
                                 ->suffix('°')
                                 ->disabled(fn(Get $get) => empty($get('survey_pdf_path')))
                                 ->dehydrated()
@@ -450,31 +457,31 @@ class DrillHoleForm
 
                             TextInput::make('planned_elevation')
                                 ->label('Elevación Planeada')
-                                ->placeholder('Ej. 1143.00')
+                                ->placeholder('Ej. 1143.000')
                                 ->numeric()
-                                ->maxValue(999999.99)
-                                ->step(0.01)
+                                ->maxValue(9999999.999)
+                                ->step(0.001)
                                 ->suffix('m.s.n.m.')
                                 ->columnSpan(1),
 
                             TextInput::make('planned_dip')
                                 ->label('Dip Planeado')
-                                ->placeholder('Ej. -75.00')
+                                ->placeholder('Ej. -75.000')
                                 ->numeric()
                                 ->minValue(-90)
                                 ->maxValue(90)
-                                ->step(0.01)
+                                ->step(0.001)
                                 ->suffix('°')
                                 ->helperText('Rango: -90° a 90°')
                                 ->columnSpan(1),
 
                             TextInput::make('planned_azimuth')
                                 ->label('Azimuth Planeado')
-                                ->placeholder('Ej. 45.00')
+                                ->placeholder('Ej. 45.000')
                                 ->numeric()
                                 ->minValue(0)
                                 ->maxValue(360)
-                                ->step(0.01)
+                                ->step(0.001)
                                 ->suffix('°')
                                 ->helperText('Rango: 0° a 360°')
                                 ->columnSpan(1),

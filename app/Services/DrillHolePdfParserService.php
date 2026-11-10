@@ -21,7 +21,8 @@ class DrillHolePdfParserService
     public function parsePdf(mixed $file): array
     {
         if (is_array($file)) {
-            $file = reset($file);
+            $uploaded = array_filter($file, fn ($item) => $item instanceof File || $item instanceof UploadedFile);
+            $file = !empty($uploaded) ? end($uploaded) : end($file);
         }
 
         // 1. Si es una ruta almacenada en el disco cloud coreflow
@@ -77,7 +78,8 @@ class DrillHolePdfParserService
     private function resolveFilePath(mixed $file): ?string
     {
         if (is_array($file)) {
-            $file = reset($file);
+            $uploaded = array_filter($file, fn ($item) => $item instanceof File || $item instanceof UploadedFile);
+            $file = !empty($uploaded) ? end($uploaded) : end($file);
         }
 
         if ($file instanceof File || $file instanceof UploadedFile) {
@@ -280,6 +282,7 @@ class DrillHolePdfParserService
             'JULIO'      => '07',
             'AGOSTO'     => '08',
             'SEPTIEMBRE' => '09',
+            'SETIEMBRE'  => '09',
             'OCTUBRE'    => '10',
             'NOVIEMBRE'  => '11',
             'DICIEMBRE'  => '12',
@@ -289,12 +292,19 @@ class DrillHolePdfParserService
 
         foreach ($months as $name => $num) {
             if (str_contains($upperDate, $name)) {
-                if (preg_match('/(\d{1,2})\s+DE\s+[A-Z]+\s+(\d{4})/i', $upperDate, $m)) {
+                if (preg_match('/(\d{1,2})\s*(?:DE|DEL)?\s*' . $name . '\s*(?:DE|DEL|,)?\s*(\d{4})/iu', $upperDate, $m)) {
                     $day = str_pad($m[1], 2, '0', STR_PAD_LEFT);
                     $year = $m[2];
                     return "{$year}-{$num}-{$day}";
                 }
             }
+        }
+
+        if (preg_match('/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/', trim($rawDate), $m)) {
+            $day = str_pad($m[1], 2, '0', STR_PAD_LEFT);
+            $month = str_pad($m[2], 2, '0', STR_PAD_LEFT);
+            $year = $m[3];
+            return "{$year}-{$month}-{$day}";
         }
 
         try {

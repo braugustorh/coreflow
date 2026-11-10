@@ -312,7 +312,7 @@ class DrillHolesTable
                 TextColumn::make('elevation')
                     ->label('Elev. Inst.')
                     ->suffix(' m')
-                    ->numeric(2)
+                    ->numeric(3)
                     ->sortable()
                     ->alignRight()
                     ->toggleable(isToggledHiddenByDefault: true),
@@ -335,7 +335,7 @@ class DrillHolesTable
                 TextColumn::make('planned_elevation')
                     ->label('Elev. Plan.')
                     ->suffix(' m')
-                    ->numeric(2)
+                    ->numeric(3)
                     ->sortable()
                     ->alignRight()
                     ->toggleable(isToggledHiddenByDefault: true),
