@@ -45,6 +45,7 @@
             display: flex;
             flex-direction: column;
             gap: 0.375rem;
+            position: relative;
         }
         .qce-form-label {
             font-size: 0.75rem;
@@ -71,9 +72,163 @@
             background-color: #1e293b;
             color: #f8fafc;
         }
-        .qce-select:focus {
+        .qce-select:focus,
+        .qce-select.is-open {
             border-color: #6366f1;
             box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2);
+        }
+
+        /* Searchable Select Dropdown */
+        [x-cloak] {
+            display: none !important;
+        }
+        .qce-searchable-select {
+            position: relative;
+            width: 100%;
+        }
+        .qce-select-trigger {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.5rem;
+            cursor: pointer;
+            text-align: left;
+            min-height: 2.375rem;
+        }
+        .qce-select-trigger-text {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            flex: 1;
+        }
+        .qce-select-trigger-text.is-placeholder {
+            color: #64748b;
+        }
+        .dark .qce-select-trigger-text.is-placeholder {
+            color: #94a3b8;
+        }
+        .qce-select-trigger-actions {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.25rem;
+            flex-shrink: 0;
+            color: #64748b;
+        }
+        .dark .qce-select-trigger-actions {
+            color: #94a3b8;
+        }
+        .qce-select-clear-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 1.25rem;
+            height: 1.25rem;
+            border-radius: 9999px;
+            color: #94a3b8;
+            transition: background-color 0.15s, color 0.15s;
+        }
+        .qce-select-clear-btn:hover {
+            background-color: #f1f5f9;
+            color: #ef4444;
+        }
+        .dark .qce-select-clear-btn:hover {
+            background-color: #334155;
+            color: #f87171;
+        }
+        .qce-select-dropdown {
+            position: absolute;
+            top: calc(100% + 0.35rem);
+            left: 0;
+            right: 0;
+            z-index: 50;
+            background: #ffffff;
+            border: 1px solid #cbd5e1;
+            border-radius: 0.625rem;
+            box-shadow: 0 10px 25px -5px rgba(15, 23, 42, 0.12), 0 8px 10px -6px rgba(15, 23, 42, 0.08);
+            overflow: hidden;
+        }
+        .dark .qce-select-dropdown {
+            background: #1e293b;
+            border-color: #334155;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
+        }
+        .qce-select-search-wrap {
+            padding: 0.5rem;
+            border-bottom: 1px solid #f1f5f9;
+            background: #f8fafc;
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+        }
+        .dark .qce-select-search-wrap {
+            border-color: #334155;
+            background: #0f172a;
+        }
+        .qce-select-search-input {
+            width: 100%;
+            font-size: 0.8125rem;
+            background: transparent;
+            border: none;
+            outline: none;
+            color: #0f172a;
+            padding: 0.15rem 0.25rem;
+        }
+        .dark .qce-select-search-input {
+            color: #f8fafc;
+        }
+        .qce-select-search-input::placeholder {
+            color: #94a3b8;
+        }
+        .qce-select-options {
+            max-height: 220px;
+            overflow-y: auto;
+            padding: 0.25rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.125rem;
+        }
+        .qce-select-option {
+            width: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.5rem;
+            padding: 0.45rem 0.625rem;
+            font-size: 0.8125rem;
+            border-radius: 0.375rem;
+            border: none;
+            background: transparent;
+            color: #1e293b;
+            cursor: pointer;
+            text-align: left;
+            transition: background-color 0.12s, color 0.12s;
+        }
+        .dark .qce-select-option {
+            color: #e2e8f0;
+        }
+        .qce-select-option:hover {
+            background: #f1f5f9;
+        }
+        .dark .qce-select-option:hover {
+            background: #334155;
+        }
+        .qce-select-option.is-selected {
+            background: #eef2ff;
+            color: #4f46e5;
+            font-weight: 700;
+        }
+        .dark .qce-select-option.is-selected {
+            background: rgba(99, 102, 241, 0.2);
+            color: #818cf8;
+        }
+        .qce-select-empty {
+            padding: 0.75rem 0.5rem;
+            text-align: center;
+            font-size: 0.75rem;
+            color: #64748b;
+        }
+        .dark .qce-select-empty {
+            color: #94a3b8;
         }
 
         /* Filter Tabs */
@@ -445,26 +600,217 @@
         {{-- Barra Superior de Filtros --}}
         <div class="qce-card">
             <div class="qce-filters-grid">
-                {{-- Selector Barreno --}}
-                <div class="qce-form-group">
+                @php
+                    $barrenosOpts = $this->barrenosOptions;
+                    $workOrdersOpts = $this->workOrdersOptions;
+                    $selectedBarreno = $this->barrenoId ? $barrenosOpts->firstWhere('id', $this->barrenoId) : null;
+                    $selectedWo = $this->workOrderId ? $workOrdersOpts->firstWhere('id', $this->workOrderId) : null;
+                @endphp
+
+                {{-- Selector Barreno (Searchable) --}}
+                <div class="qce-form-group"
+                     x-data="{
+                         open: false,
+                         search: '',
+                         toggle() {
+                             this.open = !this.open;
+                             if (this.open) {
+                                 this.search = '';
+                                 this.$nextTick(() => this.$refs.searchInput?.focus());
+                             }
+                         },
+                         close() {
+                             this.open = false;
+                             this.search = '';
+                         },
+                         hasMatches() {
+                             const q = this.search.trim().toLowerCase();
+                             if (!q) return true;
+                             const items = this.$refs.optionsList ? this.$refs.optionsList.querySelectorAll('[data-search]') : [];
+                             for (let i = 0; i < items.length; i++) {
+                                 if (items[i].dataset.search.includes(q)) return true;
+                             }
+                             return false;
+                         }
+                     }"
+                     @click.outside="close()"
+                     @keydown.escape.window="if (open) close()">
                     <label class="qce-form-label">Filtrar por Barreno</label>
-                    <select wire:model.live="barrenoId" class="qce-select">
-                        <option value="">— Todos los Barrenos —</option>
-                        @foreach($this->barrenosOptions as $b)
-                            <option value="{{ $b->id }}">{{ $b->nombre_barreno }}</option>
-                        @endforeach
-                    </select>
+                    <div class="qce-searchable-select">
+                        <button type="button"
+                                @click="toggle()"
+                                class="qce-select qce-select-trigger"
+                                :class="{ 'is-open': open }">
+                            <span class="qce-select-trigger-text {{ $selectedBarreno ? '' : 'is-placeholder' }}">
+                                {{ $selectedBarreno ? $selectedBarreno->nombre_barreno : '— Todos los Barrenos —' }}
+                            </span>
+                            <span class="qce-select-trigger-actions">
+                                @if($this->barrenoId)
+                                    <span role="button"
+                                          tabindex="0"
+                                          title="Limpiar filtro de barreno"
+                                          wire:click.stop="$set('barrenoId', null)"
+                                          @click.stop="close()"
+                                          class="qce-select-clear-btn">
+                                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="width: 13px; height: 13px;"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                                    </span>
+                                @endif
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 15px; height: 15px; transition: transform 0.15s ease;" :style="open ? 'transform: rotate(180deg);' : ''"><path d="m6 9 6 6 6-6"/></svg>
+                            </span>
+                        </button>
+
+                        <div x-show="open"
+                             x-cloak
+                             class="qce-select-dropdown">
+                            <div class="qce-select-search-wrap">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 14px; height: 14px; color: #94a3b8;"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+                                <input type="text"
+                                       x-model="search"
+                                       x-ref="searchInput"
+                                       placeholder="Buscar barreno..."
+                                       class="qce-select-search-input"
+                                       @keydown.escape.stop="close()">
+                            </div>
+
+                            <div class="qce-select-options" x-ref="optionsList">
+                                <button type="button"
+                                        x-show="!search.trim()"
+                                        wire:click="$set('barrenoId', null)"
+                                        @click="close()"
+                                        class="qce-select-option {{ !$this->barrenoId ? 'is-selected' : '' }}">
+                                    <span>— Todos los Barrenos —</span>
+                                    @if(!$this->barrenoId)
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width: 14px; height: 14px;"><path d="M20 6 9 17l-5-5"/></svg>
+                                    @endif
+                                </button>
+
+                                @foreach($barrenosOpts as $b)
+                                    <button type="button"
+                                            wire:key="barreno-opt-{{ $b->id }}"
+                                            data-search="{{ mb_strtolower($b->nombre_barreno) }}"
+                                            x-show="!search.trim() || $el.dataset.search.includes(search.trim().toLowerCase())"
+                                            wire:click="$set('barrenoId', {{ $b->id }})"
+                                            @click="close()"
+                                            class="qce-select-option {{ $this->barrenoId === $b->id ? 'is-selected' : '' }}">
+                                        <span>{{ $b->nombre_barreno }}</span>
+                                        @if($this->barrenoId === $b->id)
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width: 14px; height: 14px;"><path d="M20 6 9 17l-5-5"/></svg>
+                                        @endif
+                                    </button>
+                                @endforeach
+
+                                <div x-show="search.trim() !== '' && !hasMatches()" class="qce-select-empty">
+                                    No se encontraron barrenos que coincidan con "<span x-text="search"></span>"
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
-                {{-- Selector Work Order --}}
-                <div class="qce-form-group">
+                {{-- Selector Work Order (Searchable & Dependiente de Barreno) --}}
+                <div class="qce-form-group"
+                     x-data="{
+                         open: false,
+                         search: '',
+                         toggle() {
+                             this.open = !this.open;
+                             if (this.open) {
+                                 this.search = '';
+                                 this.$nextTick(() => this.$refs.searchInput?.focus());
+                             }
+                         },
+                         close() {
+                             this.open = false;
+                             this.search = '';
+                         },
+                         hasMatches() {
+                             const q = this.search.trim().toLowerCase();
+                             if (!q) return true;
+                             const items = this.$refs.optionsList ? this.$refs.optionsList.querySelectorAll('[data-search]') : [];
+                             for (let i = 0; i < items.length; i++) {
+                                 if (items[i].dataset.search.includes(q)) return true;
+                             }
+                             return false;
+                         }
+                     }"
+                     @click.outside="close()"
+                     @keydown.escape.window="if (open) close()">
                     <label class="qce-form-label">Filtrar por Work Order</label>
-                    <select wire:model.live="workOrderId" class="qce-select">
-                        <option value="">— Todas las Órdenes —</option>
-                        @foreach($this->workOrdersOptions as $wo)
-                            <option value="{{ $wo->id }}">{{ $wo->work_order_code }}</option>
-                        @endforeach
-                    </select>
+                    <div class="qce-searchable-select">
+                        <button type="button"
+                                @click="toggle()"
+                                class="qce-select qce-select-trigger"
+                                :class="{ 'is-open': open }">
+                            <span class="qce-select-trigger-text {{ $selectedWo ? '' : 'is-placeholder' }}">
+                                {{ $selectedWo ? $selectedWo->work_order_code : '— Todas las Órdenes —' }}
+                            </span>
+                            <span class="qce-select-trigger-actions">
+                                @if($this->workOrderId)
+                                    <span role="button"
+                                          tabindex="0"
+                                          title="Limpiar filtro de Work Order"
+                                          wire:click.stop="$set('workOrderId', null)"
+                                          @click.stop="close()"
+                                          class="qce-select-clear-btn">
+                                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="width: 13px; height: 13px;"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                                    </span>
+                                @endif
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 15px; height: 15px; transition: transform 0.15s ease;" :style="open ? 'transform: rotate(180deg);' : ''"><path d="m6 9 6 6 6-6"/></svg>
+                            </span>
+                        </button>
+
+                        <div x-show="open"
+                             x-cloak
+                             class="qce-select-dropdown">
+                            <div class="qce-select-search-wrap">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 14px; height: 14px; color: #94a3b8;"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+                                <input type="text"
+                                       x-model="search"
+                                       x-ref="searchInput"
+                                       placeholder="Buscar Work Order..."
+                                       class="qce-select-search-input"
+                                       @keydown.escape.stop="close()">
+                            </div>
+
+                            <div class="qce-select-options" x-ref="optionsList">
+                                <button type="button"
+                                        x-show="!search.trim()"
+                                        wire:click="$set('workOrderId', null)"
+                                        @click="close()"
+                                        class="qce-select-option {{ !$this->workOrderId ? 'is-selected' : '' }}">
+                                    <span>— Todas las Órdenes —</span>
+                                    @if(!$this->workOrderId)
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width: 14px; height: 14px;"><path d="M20 6 9 17l-5-5"/></svg>
+                                    @endif
+                                </button>
+
+                                @foreach($workOrdersOpts as $wo)
+                                    <button type="button"
+                                            wire:key="wo-opt-{{ $wo->id }}"
+                                            data-search="{{ mb_strtolower($wo->work_order_code) }}"
+                                            x-show="!search.trim() || $el.dataset.search.includes(search.trim().toLowerCase())"
+                                            wire:click="$set('workOrderId', {{ $wo->id }})"
+                                            @click="close()"
+                                            class="qce-select-option {{ $this->workOrderId === $wo->id ? 'is-selected' : '' }}">
+                                        <span>{{ $wo->work_order_code }}</span>
+                                        @if($this->workOrderId === $wo->id)
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width: 14px; height: 14px;"><path d="M20 6 9 17l-5-5"/></svg>
+                                        @endif
+                                    </button>
+                                @endforeach
+
+                                @if($workOrdersOpts->isEmpty())
+                                    <div class="qce-select-empty">
+                                        No hay Work Orders asociadas a este barreno
+                                    </div>
+                                @else
+                                    <div x-show="search.trim() !== '' && !hasMatches()" class="qce-select-empty">
+                                        No se encontraron órdenes que coincidan con "<span x-text="search"></span>"
+                                    </div>
+                                @endif
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
                 {{-- Tabs de Estado --}}

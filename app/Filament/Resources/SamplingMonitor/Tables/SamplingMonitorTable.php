@@ -91,6 +91,7 @@ class SamplingMonitorTable
                             ->with('barreno')
                             ->first()?->barreno?->nombre_barreno ?? '—'
                     )
+                    ->searchable()
                     ->badge()
                     ->color('info'),
 

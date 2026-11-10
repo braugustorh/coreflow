@@ -43,11 +43,13 @@ class QcPhotoEvidence extends Page
 
     public function mount(): void
     {
+        $this->ensureValidWorkOrderForBarreno();
         $this->ensureSelectedSample();
     }
 
     public function updatedBarrenoId(): void
     {
+        $this->ensureValidWorkOrderForBarreno();
         $this->selectedSampleId = null;
         $this->ensureSelectedSample();
     }
@@ -120,7 +122,13 @@ class QcPhotoEvidence extends Page
     public function getWorkOrdersOptionsProperty()
     {
         $query = WorkOrder::query()
-            ->whereHas('drillHoleSamples', fn($q) => $q->requiringQcPhotos())
+            ->whereHas('drillHoleSamples', function ($q) {
+                $q->requiringQcPhotos();
+
+                if ($this->barrenoId) {
+                    $q->where('barreno_id', $this->barrenoId);
+                }
+            })
             ->orderBy('work_order_code', 'desc');
 
         $user = auth()->user();
@@ -208,6 +216,21 @@ class QcPhotoEvidence extends Page
 
             if ($this->filter === 'pending') {
                 $this->goToNextPending();
+            }
+        }
+    }
+
+    protected function ensureValidWorkOrderForBarreno(): void
+    {
+        if ($this->barrenoId && $this->workOrderId) {
+            $belongsToBarreno = DrillHoleSample::query()
+                ->requiringQcPhotos()
+                ->where('barreno_id', $this->barrenoId)
+                ->where('work_order_id', $this->workOrderId)
+                ->exists();
+
+            if (!$belongsToBarreno) {
+                $this->workOrderId = null;
             }
         }
     }
