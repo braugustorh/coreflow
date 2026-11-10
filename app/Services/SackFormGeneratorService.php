@@ -20,9 +20,6 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class SackFormGeneratorService
 {
-    /** Roles válidos para resolver el nombre del Geólogo a partir del código de supervisor. */
-    private const SUPERVISOR_ROLES = ['Supervisor Coreshack', 'Supervisor CoreS'];
-
     /**
      * Genera y retorna una respuesta de descarga en formato Excel (.xlsx)
      * del Registro de Costales para la Work Order proporcionada.
@@ -31,7 +28,7 @@ class SackFormGeneratorService
     {
         // 1. Cargar las muestras asociadas ordenadas por número de muestra
         $samples = DrillHoleSample::where('work_order_id', $workOrder->id)
-            ->with(['proyecto', 'barreno.proyecto', 'duplicateSample'])
+            ->with(['proyecto', 'barreno.proyecto', 'duplicateSample', 'geologist'])
             ->orderByRaw('CAST(sample_number AS UNSIGNED), sample_number')
             ->get();
 
@@ -66,7 +63,7 @@ class SackFormGeneratorService
 
         // 3. Obtener datos de cabecera
         $proyectoNombre = $this->resolveProjectName($samples);
-        $sentFrom       = $this->resolveSentFromProject($samples);
+        $sentFrom       = $this->resolveSentFrom($workOrder, $samples);
         $geologo        = $this->resolveGeologistName($samples);
         $sentDate       = $this->resolveSentDate($workOrder, $samples);
 
@@ -99,8 +96,8 @@ class SackFormGeneratorService
         // 6. Escribir los costales y sus muestras aplicando los colores y alturas de fila legibles (20pt)
         $this->populateSacksGrid($sheet, $sacks);
 
-        // 6.1 Fecha de impresión en "Firmas de Autorización" (la fila se desplaza según los costales)
-        $this->writePrintDate($sheet);
+        // 6.1 Fecha de envío en "Firmas de Autorización" (igual a la fecha de envío en B11)
+        $this->writePrintDate($sheet, $sentDate);
 
         // 7. Preparar la descarga StreamedResponse compatible con Filament/Livewire
         $filename = "Registro_Costales_WO_{$workOrder->work_order_code}.xlsx";
@@ -148,6 +145,24 @@ class SackFormGeneratorService
     }
 
     /**
+     * Enviado desde (E8): Coreshack seleccionado en el Monitor (San Miguel / Nuevo Balsas).
+     * Si no se ha capturado, hace fallback al proyecto del barreno o de la muestra.
+     */
+    public function resolveSentFrom(WorkOrder $workOrder, $samples): string
+    {
+        if (!empty($workOrder->coreshack)) {
+            return $workOrder->coreshack;
+        }
+
+        $sampleCoreshack = collect($samples)->whereNotNull('coreshack')->first()?->coreshack;
+        if (!empty($sampleCoreshack)) {
+            return $sampleCoreshack;
+        }
+
+        return $this->resolveSentFromProject($samples);
+    }
+
+    /**
      * Enviado desde (E8): proyecto real donde está declarado el barreno.
      */
     private function resolveSentFromProject($samples): string
@@ -162,43 +177,38 @@ class SackFormGeneratorService
     }
 
     /**
-     * Geólogo (E9): usuario cuyo `code` coincide con el supervisor responsable del Monitor y que
-     * tiene rol Supervisor Coreshack / Supervisor CoreS. Si no existe, el usuario que imprime.
+     * Geólogo (E9): Nombre del geólogo responsable capturado en las muestras de la Work Order.
+     * Si no se capturó (registros históricos o sin geólogo), se retorna 'No Capturado'.
      */
     private function resolveGeologistName($samples): string
     {
-        $code = trim((string) collect($samples)->whereNotNull('responsible_supervisor')->first()?->responsible_supervisor);
+        $firstWithGeologist = collect($samples)->first(fn ($s) => !empty($s->geologist_id));
 
-        if ($code !== '') {
-            $user = User::query()
-                ->where('code', $code)
-                ->whereHas('roles', fn ($q) => $q->whereIn('name', self::SUPERVISOR_ROLES))
-                ->first();
-
-            if ($user && !empty($user->name)) {
-                return $user->name;
-            }
+        if ($firstWithGeologist && $firstWithGeologist->geologist && !empty($firstWithGeologist->geologist->name)) {
+            return $firstWithGeologist->geologist->name;
         }
 
-        return auth()->user()?->name ?? 'Geólogo';
+        return 'No Capturado';
     }
 
     /**
-     * Fecha de Envío (B11): la capturada en el Monitor de Muestreo; si no hay, 'No Capturada'.
+     * Fecha de Envío (B11): la capturada en el Monitor de Muestreo en formato DD/MM/AAAA.
+     * Si no se ha capturado, retorna vacío para permitir captura manual en físico.
      */
-    private function resolveSentDate(WorkOrder $workOrder, $samples): string
+    public function resolveSentDate(WorkOrder $workOrder, $samples): string
     {
         $date = collect($samples)->whereNotNull('sent_date')->first()?->sent_date
             ?? $workOrder->dispatch_date;
 
-        return $date ? Carbon::parse($date)->format('d/m/Y') : 'No Capturada';
+        return $date ? Carbon::parse($date)->format('d/m/Y') : '';
     }
 
     /**
-     * Escribe la fecha de impresión (hoy) en la celda de fecha de "Firmas de Autorización".
+     * Escribe la fecha de envío en la celda de fecha de "Firmas de Autorización" (E51).
+     * Es idéntica a la fecha de envío de B11 en formato DD/MM/AAAA.
      * Localiza dinámicamente la fila: columna E con el rótulo "FECHA"; la celda de captura queda debajo.
      */
-    private function writePrintDate($sheet): void
+    public function writePrintDate($sheet, string $sentDate = ''): void
     {
         $highest = $sheet->getHighestRow();
         $labelRow = null;
@@ -221,7 +231,7 @@ class SackFormGeneratorService
         }
 
         if ($labelRow !== null) {
-            $sheet->setCellValue('E' . ($labelRow + 1), now()->format('d/m/Y'));
+            $sheet->setCellValue('E' . ($labelRow + 1), $sentDate);
         }
     }
 
@@ -231,7 +241,7 @@ class SackFormGeneratorService
     public function resolveTemplatePath(?string $customPath = null): ?string
     {
         if ($customPath !== null) {
-            return (file_exists($customPath) && is_readable($customPath)) ? $customPath : null;
+            return ($this->isPathReadable($customPath)) ? $customPath : null;
         }
 
         $candidates = [
@@ -240,12 +250,34 @@ class SackFormGeneratorService
         ];
 
         foreach ($candidates as $path) {
-            if (is_string($path) && file_exists($path) && is_readable($path)) {
+            if (is_string($path) && $this->isPathReadable($path)) {
                 return $path;
             }
         }
 
         return null;
+    }
+
+    /**
+     * Verifica si un archivo existe y es legible (con fallback a fopen para compatibilidad Windows/PHP).
+     */
+    private function isPathReadable(string $path): bool
+    {
+        if (!file_exists($path)) {
+            return false;
+        }
+
+        if (is_readable($path)) {
+            return true;
+        }
+
+        $fp = @fopen($path, 'rb');
+        if ($fp !== false) {
+            fclose($fp);
+            return true;
+        }
+
+        return false;
     }
 
     /**

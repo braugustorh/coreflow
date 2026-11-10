@@ -49,7 +49,7 @@
         .ac-search-title {
             font-size: 1rem;
             font-weight: 700;
-            color: var(--fi-body-text-color, #1e293b);
+            color: #1e293b;
         }
 
         .ac-search-subtitle {
@@ -593,7 +593,7 @@
         .ac-form-title {
             font-size: 1rem;
             font-weight: 700;
-            color: var(--fi-body-text-color, #1e293b);
+            color: #1e293b;
         }
 
         .ac-form-actions {
@@ -631,7 +631,7 @@
         .ac-table-title {
             font-size: 1rem;
             font-weight: 700;
-            color: var(--fi-body-text-color, #1e293b);
+            color: #1e293b;
         }
 
         /* --- Entrance Animation --- */
@@ -702,6 +702,12 @@
 
         .dark .ac-search-subtitle {
             color: #94a3b8;
+        }
+
+        .dark .ac-search-title,
+        .dark .ac-form-title,
+        .dark .ac-table-title {
+            color: #f8fafc;
         }
 
         .dark .ac-form-section,
@@ -864,6 +870,47 @@
             background: rgba(239, 68, 68, 0.2);
             border-color: rgba(239, 68, 68, 0.4);
             color: #f87171;
+        }
+
+        /* --- Dropdown Geólogo Custom --- */
+        .ac-dropdown-panel {
+            background: #ffffff;
+            border: 1px solid #cbd5e1;
+            color: #1e293b;
+        }
+
+        .dark .ac-dropdown-panel {
+            background: #1e293b;
+            border-color: #475569;
+            color: #f1f5f9;
+        }
+
+        .ac-dropdown-option {
+            transition: background 0.15s ease;
+        }
+
+        .ac-dropdown-option:hover {
+            background-color: #f1f5f9;
+        }
+
+        .dark .ac-dropdown-option:hover {
+            background-color: #334155;
+        }
+
+        .ac-geo-code {
+            display: inline-block;
+            padding: 1px 6px;
+            font-size: 0.75rem;
+            font-weight: 700;
+            border-radius: 4px;
+            background: rgba(99, 102, 241, 0.1);
+            color: #6366f1;
+            letter-spacing: 0.05em;
+        }
+
+        .dark .ac-geo-code {
+            background: rgba(99, 102, 241, 0.25);
+            color: #a5b4fc;
         }
 
         /* ===== Modal Edit Navigation & Validation Status (Safe Standalone Styles) ===== */
@@ -1397,14 +1444,47 @@
                             <div class="ac-search-subtitle">Presione Enter en "Hasta" para añadir nueva fila</div>
                         </div>
                     </div>
-                    <div style="display:flex; align-items:center; gap: 1rem;">
+                    <div style="display:flex; align-items:center; gap: 1rem; flex-wrap: wrap;">
                         <div style="display:flex; align-items:center; gap: 0.5rem;">
                             <label style="font-size: 0.875rem; font-weight: 500;">Proyecto:</label>
-                            <select x-model="defaultProyecto" class="ac-grid-input" style="width: 200px;">
+                            <select x-model="defaultProyecto" class="ac-grid-input" style="width: 180px;">
                                 <template x-for="p in proyectos" :key="p.id">
                                     <option :value="p.id" x-text="p.nombre"></option>
                                 </template>
                             </select>
+                        </div>
+                        <div style="display:flex; align-items:center; gap: 0.5rem;">
+                            <label style="font-size: 0.875rem; font-weight: 500;">Geólogo:</label>
+                            <div wire:key="geologo-selector-wrapper" x-data="{ open: false }" class="relative" @click.outside="open = false" style="width: 230px; position: relative;">
+                                <button type="button" @click="open = !open"
+                                    class="ac-grid-input"
+                                    :class="!defaultGeologoId ? 'ac-grid-input-required' : ''"
+                                    style="display: flex; justify-content: space-between; align-items: center; text-align: left; cursor: pointer; height: 34px; padding: 0.4rem 0.6rem; user-select: none;">
+                                    <span class="truncate" x-text="selectedGeologoName || 'Seleccionar Geólogo...'" :style="!selectedGeologoName ? 'opacity: 0.6;' : ''"></span>
+                                    <svg style="width: 1rem; height: 1rem; flex-shrink: 0; margin-left: 4px; opacity: 0.7;" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                                        <path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd" />
+                                    </svg>
+                                </button>
+                                <div x-show="open" x-cloak
+                                    class="ac-dropdown-panel"
+                                    style="position: absolute; z-index: 100; top: calc(100% + 4px); left: 0; width: 100%; min-width: 260px; max-height: 250px; overflow-y: auto; border-radius: 0.375rem; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1); padding: 4px 0;">
+                                    <template x-for="g in geologos" :key="g.id">
+                                        <div @click="selectGeologo(g); open = false;"
+                                            class="ac-dropdown-option"
+                                            :style="defaultGeologoId === g.id ? 'font-weight: 600;' : ''"
+                                            style="padding: 7px 12px; cursor: pointer; font-size: 0.8125rem; display: flex; align-items: center; gap: 8px;">
+                                            <span class="ac-geo-code" x-text="g.code"></span>
+                                            <span style="opacity: 0.4;">—</span>
+                                            <span class="truncate" x-text="g.name"></span>
+                                        </div>
+                                    </template>
+                                    <template x-if="!geologos || geologos.length === 0">
+                                        <div style="padding: 10px 12px; font-size: 0.8125rem; opacity: 0.7; text-align: center;">
+                                            No hay geólogos activos con código
+                                        </div>
+                                    </template>
+                                </div>
+                            </div>
                         </div>
                         <x-filament::button x-on:click="saveBatch" color="success" icon="heroicon-m-check-circle"
                             x-bind:disabled="hasErrors()">
@@ -1737,15 +1817,42 @@
                     dbIntervals: [],
                     dbSampleNumbers: [],
                     proyectos: @js($this->proyectosOptions),
+                    geologos: @js($this->geologosOptions),
                     estandares: @js($this->estandaresOptions),
                     muestrasOriginales: @js($this->muestrasOriginalesOptions),
                     blankLabel: @js($this->blankLabel),
                     defaultProyecto: null,
+                    defaultGeologoId: @js($this->selectedGeologistId),
+                    selectedGeologoName: '',
                     lastToDepth: 0,
                     nextSampleNum: '',
                     defaultSampledAt: new Date().toISOString().slice(0, 16),
                     maxDepth: @js($this->barreno?->max_depth),
                     currentBarrenoId: initialBarrenoId,
+
+                    selectGeologo(g) {
+                        const authId = @js(auth()->id());
+                        if (g) {
+                            this.defaultGeologoId = g.id;
+                            this.selectedGeologoName = g.name;
+                            try {
+                                localStorage.setItem('coreflow_active_geologo_' + authId, g.id);
+                            } catch (e) {}
+                            if (this.$wire) {
+                                this.$wire.set('selectedGeologistId', g.id, false);
+                            }
+                        } else {
+                            this.defaultGeologoId = null;
+                            this.selectedGeologoName = '';
+                            try {
+                                localStorage.removeItem('coreflow_active_geologo_' + authId);
+                            } catch (e) {}
+                            if (this.$wire) {
+                                this.$wire.set('selectedGeologistId', null, false);
+                            }
+                        }
+                        this.saveToStorage();
+                    },
 
                     showCoreSizeModal: false,
                     coreSizeScope: 'all',
@@ -1872,6 +1979,29 @@
                             this.defaultProyecto = this.proyectos[0].id;
                         }
 
+                        // Prioridad para restaurar la selección del Geólogo:
+                        // 1. Livewire state
+                        // 2. localStorage activo del usuario
+                        // 3. Usuario actual si tiene rol Geólogo
+                        const authId = @js(auth()->id());
+                        let restoredGeoId = this.defaultGeologoId;
+                        if (!restoredGeoId) {
+                            try {
+                                restoredGeoId = localStorage.getItem('coreflow_active_geologo_' + authId);
+                            } catch (e) {}
+                        }
+                        if (!restoredGeoId) {
+                            const myGeo = (this.geologos || []).find(g => g.id === authId);
+                            if (myGeo) restoredGeoId = myGeo.id;
+                        }
+                        if (restoredGeoId) {
+                            let found = (this.geologos || []).find(g => String(g.id) === String(restoredGeoId));
+                            if (found) {
+                                this.defaultGeologoId = found.id;
+                                this.selectedGeologoName = found.name;
+                            }
+                        }
+
                         // Cargar borrador guardado en localStorage si existe para este barreno
                         const storageKey = this.getStorageKey();
                         const saved = localStorage.getItem(storageKey);
@@ -1880,6 +2010,10 @@
                                 const parsed = JSON.parse(saved);
                                 if (Array.isArray(parsed) && parsed.length > 0) {
                                     this.samples = parsed;
+                                    if (parsed[0].geologist_id) {
+                                        let found = (this.geologos || []).find(g => g.id === parsed[0].geologist_id);
+                                        if (found) this.selectGeologo(found);
+                                    }
                                 } else {
                                     this.addEmptyRow();
                                 }
@@ -1913,6 +2047,10 @@
                             this.maxDepth = data.maxDepth || null;
                             if (data.proyectoId) this.defaultProyecto = data.proyectoId;
                             if (data.sampledAt) this.defaultSampledAt = data.sampledAt.replace(' ', 'T');
+                            if (data.geologistId && !this.defaultGeologoId) {
+                                let foundGeo = (this.geologos || []).find(g => g.id === data.geologistId);
+                                if (foundGeo) this.selectGeologo(foundGeo);
+                            }
 
                             // Cargar borrador para el nuevo barreno seleccionado si existe en localStorage
                             const barrenoId = data.selectedBarrenoId;
@@ -1924,6 +2062,10 @@
                                         const parsed = JSON.parse(savedDraft);
                                         if (Array.isArray(parsed) && parsed.length > 0) {
                                             this.samples = parsed;
+                                            if (parsed[0].geologist_id) {
+                                                let found = (this.geologos || []).find(g => g.id === parsed[0].geologist_id);
+                                                if (found) this.selectGeologo(found);
+                                            }
                                             return; // Si restauramos borrador, evitamos limpiar y añadir fila vacía por defecto
                                         }
                                     } catch (e) {
@@ -1944,6 +2086,22 @@
                             if (data.existingSampleNumbers) this.dbSampleNumbers = data.existingSampleNumbers;
                             if (data.nextSampleNumber) this.nextSampleNum = data.nextSampleNumber;
                             if (data.fromDepth !== undefined) this.lastToDepth = data.fromDepth;
+
+                            // Preservar estrictamente el geólogo seleccionado tras guardar el lote
+                            const authId = @js(auth()->id());
+                            let targetGeoId = data.geologistId || this.defaultGeologoId;
+                            if (!targetGeoId) {
+                                try {
+                                    targetGeoId = localStorage.getItem('coreflow_active_geologo_' + authId);
+                                } catch (e) {}
+                            }
+                            if (targetGeoId) {
+                                let found = (this.geologos || []).find(g => String(g.id) === String(targetGeoId));
+                                if (found) {
+                                    this.defaultGeologoId = found.id;
+                                    this.selectedGeologoName = found.name;
+                                }
+                            }
 
                             this.samples = [];
                             this.addEmptyRow();
@@ -2017,6 +2175,7 @@
                         this.samples.push({
                             id: Date.now() + Math.random(),
                             proyecto_id: this.defaultProyecto,
+                            geologist_id: this.defaultGeologoId,
                             sample_number: sNumber,
                             sample_type: 'O',
                             control_type: 'Standard',
@@ -2191,6 +2350,7 @@
                     },
 
                     hasErrors() {
+                        if (!this.defaultGeologoId) return true;
                         for (let i = 0; i < this.samples.length; i++) {
                             if (this.getRowError(i)) return true;
                         }
@@ -2219,14 +2379,17 @@
                     },
 
                     saveBatch() {
-                        if (this.hasErrors()) return;
+                        if (this.hasErrors() || !this.defaultGeologoId) return;
 
-                        // Aplicar el proyecto actual a todas las muestras antes de enviarlas
+                        // Aplicar el proyecto y geólogo actual a todas las muestras antes de enviarlas
                         this.samples.forEach(s => {
                             s.proyecto_id = this.defaultProyecto;
+                            s.geologist_id = this.defaultGeologoId;
                         });
 
-                        @this.call('saveBatch', this.samples);
+                        if (this.$wire) {
+                            this.$wire.call('saveBatch', this.samples);
+                        }
                     }
                 }));
             });

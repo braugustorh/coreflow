@@ -224,6 +224,24 @@ class SamplingMonitorTable
                 // El modelo de la tabla es WorkOrder, así que usamos
                 // un campo virtual sincronizado:
 
+                SelectColumn::make('coreshack')
+                    ->label('Coreshack')
+                    ->options([
+                        'San Miguel'   => 'San Miguel',
+                        'Nuevo Balsas' => 'Nuevo Balsas',
+                    ])
+                    ->placeholder('Seleccionar...')
+                    ->getStateUsing(
+                        fn(WorkOrder $record): ?string =>
+                        $record->coreshack ?? $record->drillHoleSamples()->value('coreshack')
+                    )
+                    ->updateStateUsing(function (WorkOrder $record, ?string $state): void {
+                        $record->update(['coreshack' => $state]);
+                        DrillHoleSample::where('work_order_id', $record->id)
+                            ->update(['coreshack' => $state]);
+                    })
+                    ->sortable(),
+
                 SelectColumn::make('hole_status_display')
                     ->label('Estado del Barreno')
                     ->options([
@@ -333,6 +351,22 @@ class SamplingMonitorTable
             // ── Filtros ───────────────────────────────────────────────────────
 
             ->filters([
+                SelectFilter::make('coreshack')
+                    ->label('Coreshack')
+                    ->options([
+                        'San Miguel'   => 'San Miguel',
+                        'Nuevo Balsas' => 'Nuevo Balsas',
+                    ])
+                    ->query(
+                        fn(Builder $query, array $data): Builder =>
+                        isset($data['value'])
+                        ? $query->where(function ($q) use ($data) {
+                            $q->where('coreshack', $data['value'])
+                              ->orWhereHas('drillHoleSamples', fn($sq) => $sq->where('coreshack', $data['value']));
+                        })
+                        : $query
+                    ),
+
                 SelectFilter::make('sampling_status')
                     ->label('Estado de Muestreo')
                     ->options([
@@ -444,6 +478,7 @@ class SamplingMonitorTable
                     ->fillForm(function (WorkOrder $record): array {
                         $sample = $record->drillHoleSamples()->first();
                         return [
+                            'coreshack' => $record->coreshack ?? $sample?->coreshack,
                             'hole_status' => $sample?->hole_status,
                             'sent_date' => $sample?->sent_date?->format('Y-m-d'),
                             'bags_sacks_status' => $sample?->bags_sacks_status,
@@ -454,6 +489,13 @@ class SamplingMonitorTable
                         ];
                     })
                     ->form([
+                        \Filament\Forms\Components\Select::make('coreshack')
+                            ->label('Coreshack')
+                            ->options([
+                                'San Miguel'   => 'San Miguel',
+                                'Nuevo Balsas' => 'Nuevo Balsas',
+                            ])
+                            ->placeholder('Seleccionar...'),
                         \Filament\Forms\Components\Select::make('hole_status')
                             ->label('Estado del Barreno')
                             ->options([
@@ -493,6 +535,7 @@ class SamplingMonitorTable
                     ->action(function (WorkOrder $record, array $data): void {
                         DrillHoleSample::where('work_order_id', $record->id)
                             ->update([
+                                'coreshack' => $data['coreshack'] ?? null,
                                 'hole_status' => $data['hole_status'] ?? null,
                                 'sent_date' => $data['sent_date'] ?? null,
                                 'bags_sacks_status' => $data['bags_sacks_status'] ?? null,
@@ -503,6 +546,7 @@ class SamplingMonitorTable
                             ]);
 
                         $record->update([
+                            'coreshack' => $data['coreshack'] ?? null,
                             'dispatch_date' => $data['sent_date'] ?? null,
                         ]);
 

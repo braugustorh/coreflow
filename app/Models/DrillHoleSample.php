@@ -57,6 +57,11 @@ class DrillHoleSample extends Model
         return $this->belongsTo(User::class);
     }
 
+    public function geologist(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'geologist_id');
+    }
+
     public function editor(): BelongsTo
     {
         return $this->belongsTo(User::class, 'editor_id');

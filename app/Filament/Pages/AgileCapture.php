@@ -9,6 +9,7 @@ use App\Models\Proyecto;
 use App\Models\SampleSetting;
 use App\Models\Sede;
 use App\Models\StandardSample;
+use App\Models\User;
 use App\Models\WorkOrder;
 use App\Services\SampleValidationService;
 use Filament\Actions\BulkAction;
@@ -69,11 +70,30 @@ class AgileCapture extends Page implements HasForms, HasTable
             || $user->can('View:AgileCapture');
     }
 
+    /**
+     * Determina si el usuario autenticado tiene exclusivamente el perfil operativo Coreshack.
+     * Si cuenta con roles de administración, supervisión o geología, no aplica la restricción.
+     */
+    public static function isCoreshackUser(): bool
+    {
+        $user = auth()->user();
+        if (!$user) {
+            return false;
+        }
+
+        if ($user->hasAnyRole(['super_admin', 'Admin CoreFlow', 'Supervisor Coreshack', 'Supervisor CoreS', 'Geologo'])) {
+            return false;
+        }
+
+        return $user->hasRole('Coreshack');
+    }
+
     // Estado Paso 1
     public $searchBarreno = '';
     public ?int $selectedBarrenoId = null;
     public ?DrillHole $barreno = null;
     public bool $isLoadingBarreno = false;
+    public ?int $selectedGeologistId = null;
 
     /**
      * Obtiene la lista de coincidencias en tiempo real mientras el usuario escribe.
@@ -293,12 +313,22 @@ class AgileCapture extends Page implements HasForms, HasTable
 
         $nextSampleNumber = $this->calculateNextSampleNumber($this->barreno->id, $this->barreno->proyecto_id);
 
+        $lastGeologistId = DrillHoleSample::where('barreno_id', $this->barreno->id)
+            ->whereNotNull('geologist_id')
+            ->orderBy('id', 'desc')
+            ->value('geologist_id');
+
+        if ($lastGeologistId) {
+            $this->selectedGeologistId = (int) $lastGeologistId;
+        }
+
         // Emitimos evento para que Alpine.js reaccione e inicie el batch
         $this->dispatch('barreno-selected', [
             'selectedBarrenoId' => $this->barreno->id,
             'nextSampleNumber' => $nextSampleNumber,
             'fromDepth' => $lastOriginalSample ? $lastOriginalSample->to_depth : 0,
             'proyectoId' => $this->barreno->proyecto_id,
+            'geologistId' => $this->selectedGeologistId,
             'sampledAt' => $lastSample && $lastSample->sampled_at
                 ? $lastSample->sampled_at->format('Y-m-d H:i:s')
                 : now()->format('Y-m-d H:i:s'),
@@ -322,6 +352,17 @@ class AgileCapture extends Page implements HasForms, HasTable
             return Proyecto::select('id', 'nombre')->get();
         }
         return Proyecto::where('sede_id', $user->sede_id)->select('id', 'nombre')->get();
+    }
+
+    public function getGeologosOptionsProperty()
+    {
+        return User::query()
+            ->where('is_active', true)
+            ->whereNotNull('code')
+            ->where('code', '!=', '')
+            ->whereHas('roles', fn ($q) => $q->where('name', 'Geologo'))
+            ->orderBy('name')
+            ->get(['id', 'code', 'name']);
     }
 
     public function getEstandaresOptionsProperty()
@@ -369,6 +410,10 @@ class AgileCapture extends Page implements HasForms, HasTable
             $isControl = ($data['sample_type'] ?? 'O') === 'Control';
 
             // 1. Validaciones de obligatoriedad (no vacíos)
+            if (empty($data['geologist_id'])) {
+                $errors[] = "Fila " . ($index + 1) . ": El Geólogo responsable es requerido para guardar el lote.";
+                continue;
+            }
             if (empty($data['proyecto_id'])) {
                 $errors[] = "Fila " . ($index + 1) . ": El Proyecto es requerido.";
                 continue;
@@ -471,6 +516,7 @@ class AgileCapture extends Page implements HasForms, HasTable
 
             $data['barreno_id'] = $this->selectedBarrenoId;
             $data['user_id'] = auth()->id();
+            $data['geologist_id'] = (int) $data['geologist_id'];
             $data['capture_source'] = 'manual';
             $data['qr_token'] = (string) Str::uuid();
 
@@ -668,12 +714,18 @@ class AgileCapture extends Page implements HasForms, HasTable
 
             $nextSampleNumber = $this->calculateNextSampleNumber($this->selectedBarrenoId, $proyectoId);
 
+            $firstGeologistId = collect($preparedPayloads)->pluck('geologist_id')->filter()->first();
+            if ($firstGeologistId) {
+                $this->selectedGeologistId = (int) $firstGeologistId;
+            }
+
             // Reiniciar el componente alpine
             $this->dispatch('batch-saved', [
                 'nextSampleNumber' => $nextSampleNumber,
                 'fromDepth' => $lastOriginalSample ? $lastOriginalSample->to_depth : 0,
                 'existingIntervals' => $existingIntervals,
                 'existingSampleNumbers' => $combinedSampleNumbers,
+                'geologistId' => $this->selectedGeologistId,
             ]);
         }
     }
@@ -751,6 +803,7 @@ class AgileCapture extends Page implements HasForms, HasTable
                     ->where('barreno_id', $this->selectedBarrenoId ?? -1)
                     ->orderBy('sample_number', 'asc')
             )
+            ->columnManager(fn () => !static::isCoreshackUser())
             ->defaultPaginationPageOption(25)
             ->paginationPageOptions([10, 25, 75, 100])
             ->columns([
@@ -761,31 +814,35 @@ class AgileCapture extends Page implements HasForms, HasTable
                     ->label('Sample Number')
                     ->searchable()
                     ->sortable()
-                    ->toggleable(),
+                    ->toggleable(fn () => !static::isCoreshackUser()),
                 TextColumn::make('from_depth')
                     ->label('From')
                     ->numeric(2)
                     ->sortable()
-                    ->toggleable(),
+                    ->toggleable()
+                    ->visible(fn () => !static::isCoreshackUser()),
                 TextColumn::make('to_depth')
                     ->label('To')
                     ->numeric(2)
                     ->sortable()
-                    ->toggleable(),
+                    ->toggleable()
+                    ->visible(fn () => !static::isCoreshackUser()),
                 TextColumn::make('length')
                     ->label('Length')
                     ->numeric(2)
                     ->sortable()
-                    ->toggleable(),
+                    ->toggleable()
+                    ->visible(fn () => !static::isCoreshackUser()),
                 TextColumn::make('sample_length')
-                    ->label('Sample Length')
+                    ->label('sample_length')
                     ->numeric(2)
                     ->sortable()
-                    ->toggleable(),
+                    ->toggleable(fn () => !static::isCoreshackUser()),
                 TextColumn::make('sample_type')
                     ->label('Sample Type')
                     ->sortable()
-                    ->toggleable(),
+                    ->toggleable()
+                    ->visible(fn () => !static::isCoreshackUser()),
                 TextColumn::make('control_type')
                     ->label('Control Type')
                     ->badge()
@@ -810,7 +867,7 @@ class AgileCapture extends Page implements HasForms, HasTable
                         return $state;
                     })
                     ->sortable()
-                    ->toggleable(),
+                    ->toggleable(fn () => !static::isCoreshackUser()),
                 TextColumn::make('qc_photos_status')
                     ->label('Fotos QC')
                     ->badge()
@@ -834,7 +891,7 @@ class AgileCapture extends Page implements HasForms, HasTable
                         return $count >= DrillHoleSample::QC_PHOTOS_REQUIRED ? 'Fotos completas (2/2)' : 'Faltan fotos obligatorias de control';
                     })
                     ->sortable(false)
-                    ->toggleable(),
+                    ->toggleable(fn () => !static::isCoreshackUser()),
                 TextColumn::make('core_size')
                     ->label('Core Size')
                     ->badge()
@@ -846,23 +903,26 @@ class AgileCapture extends Page implements HasForms, HasTable
                         default => 'gray',
                     })
                     ->sortable()
-                    ->toggleable(),
+                    ->toggleable()
+                    ->visible(fn () => !static::isCoreshackUser()),
                 TextInputColumn::make('weight')
-                    ->label('Wght')
+                    ->label('WGHT')
                     ->rules(['nullable', 'numeric', 'min:0', 'decimal:0,3'])
                     ->step(0.001)
                     ->disabled(fn (DrillHoleSample $record): bool => !auth()->user()?->hasRole(['super_admin', 'Admin CoreFlow']) && ($record->is_archived || !empty($record->workOrder?->dispatch_date)))
                     ->sortable()
-                    ->toggleable(),
+                    ->toggleable(fn () => !static::isCoreshackUser()),
                 TextColumn::make('sampled_at')
                     ->label('Fecha Muestreo')
                     ->dateTime('d/m/Y H:i')
                     ->sortable()
-                    ->toggleable(isToggledHiddenByDefault: true),
+                    ->toggleable(isToggledHiddenByDefault: true)
+                    ->visible(fn () => !static::isCoreshackUser()),
                 TextColumn::make('workOrder.work_order_code')
                     ->label('WO')
                     ->sortable()
-                    ->toggleable(),
+                    ->toggleable()
+                    ->visible(fn () => !static::isCoreshackUser()),
                 TextColumn::make('user.code')
                     ->label('Code')
                     ->tooltip(fn (DrillHoleSample $record): ?string => $record->user?->name)
@@ -871,12 +931,14 @@ class AgileCapture extends Page implements HasForms, HasTable
                     ->placeholder('—')
                     ->sortable()
                     ->searchable()
-                    ->toggleable(),
+                    ->toggleable()
+                    ->visible(fn () => !static::isCoreshackUser()),
                 TextColumn::make('comentarios')
                     ->label('Comentarios')
                     ->limit(40)
                     ->sortable()
-                    ->toggleable(isToggledHiddenByDefault: true),
+                    ->toggleable(isToggledHiddenByDefault: true)
+                    ->visible(fn () => !static::isCoreshackUser()),
             ])
             ->actions([
                 QcPhotosAction::make(),
@@ -1314,6 +1376,8 @@ class AgileCapture extends Page implements HasForms, HasTable
                     }),
                 DeleteAction::make()
                     ->label('Eliminar')
+                    ->visible(fn (): bool => !static::isCoreshackUser())
+                    ->authorize(fn (DrillHoleSample $record): bool => !static::isCoreshackUser())
                     ->disabled(fn (DrillHoleSample $record): bool => $record->isSent())
                     ->tooltip(fn (DrillHoleSample $record): ?string => $record->isSent()
                         ? 'No se puede eliminar: esta muestra pertenece a una WO ya enviada al laboratorio.'

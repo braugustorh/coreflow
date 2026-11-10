@@ -30,7 +30,7 @@ class CoreshackSeeder extends Seeder
             'guard_name' => 'web',
         ]);
 
-        // 4. Permisos estrictos autorizados para Coreshack
+        // 4. Permisos estrictos autorizados para Coreshack (Solo crear, ver y editar; no eliminar)
         $permissions = [
             'View:AgileCapture',
             'View:QcPhotoEvidence',
@@ -38,7 +38,6 @@ class CoreshackSeeder extends Seeder
             'View:DrillHoleSample',
             'Create:DrillHoleSample',
             'Update:DrillHoleSample',
-            'Delete:DrillHoleSample',
         ];
 
         foreach ($permissions as $permName) {
