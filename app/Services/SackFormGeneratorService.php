@@ -11,6 +11,7 @@ use Exception;
 use Illuminate\Support\Facades\Log;
 use RuntimeException;
 
+use Barryvdh\DomPDF\Facade\Pdf;
 use PhpOffice\PhpSpreadsheet\IOFactory;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Style\Alignment;
@@ -21,10 +22,22 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 class SackFormGeneratorService
 {
     /**
-     * Genera y retorna una respuesta de descarga en formato Excel (.xlsx)
-     * del Registro de Costales para la Work Order proporcionada.
+     * Prepara todos los datos de cabecera, costales y saltos de serie para una Work Order.
+     *
+     * @return array{
+     *     workOrder: WorkOrder,
+     *     samples: \Illuminate\Database\Eloquent\Collection,
+     *     proyectoNombre: string,
+     *     sentFrom: string,
+     *     geologo: string,
+     *     sentDate: string,
+     *     totalSamples: int,
+     *     sacks: array<int, array{number: int, weight: float, samples: array<string>}>,
+     *     totalSacks: int,
+     *     seriesStarts: array<string, bool>
+     * }
      */
-    public function generate(WorkOrder $workOrder, ?string $customTemplatePath = null): StreamedResponse
+    public function prepareData(WorkOrder $workOrder): array
     {
         // 1. Cargar las muestras asociadas ordenadas por número de muestra
         $samples = DrillHoleSample::where('work_order_id', $workOrder->id)
@@ -35,6 +48,61 @@ class SackFormGeneratorService
         if ($samples->isEmpty()) {
             throw new RuntimeException('La Work Order no tiene muestras asignadas.');
         }
+
+        // 2. Obtener datos de cabecera
+        $proyectoNombre = $this->resolveProjectName($samples);
+        $sentFrom       = $this->resolveSentFrom($workOrder, $samples);
+        $geologo        = $this->resolveGeologistName($samples);
+        $sentDate       = $this->resolveSentDate($workOrder, $samples);
+
+        $totalSamples = $samples->count();
+
+        // 3. Agrupar muestras en sacos (costales) aplicando el límite y factores configurados en Samples Settings
+        $settings      = SampleSetting::getSettings();
+        $maxWeight     = (float) ($settings->max_sack_weight ?? 25.0);
+        $defaultWeight = (float) config('coreflow.default_sample_weight', 1.0);
+        $sacks         = $this->buildSacks($samples, $maxWeight, $defaultWeight, $settings);
+        $totalSacks    = count($sacks);
+        $seriesStarts  = $this->detectSeriesStarts($samples);
+
+        return compact(
+            'workOrder',
+            'samples',
+            'proyectoNombre',
+            'sentFrom',
+            'geologo',
+            'sentDate',
+            'totalSamples',
+            'sacks',
+            'totalSacks',
+            'seriesStarts'
+        );
+    }
+
+    /**
+     * Genera y retorna el binario PDF del Registro de Costales para integrarlo en el expediente unificado.
+     */
+    public function generatePdfBinary(WorkOrder $workOrder): string
+    {
+        $data = $this->prepareData($workOrder);
+
+        $pdf = Pdf::loadView('pdf.sacks-form', $data)
+            ->setPaper('letter', 'portrait')
+            ->setOption('isHtml5ParserEnabled', true)
+            ->setOption('isRemoteEnabled', false)
+            ->setOption('defaultFont', 'Helvetica');
+
+        return $pdf->output();
+    }
+
+    /**
+     * Genera y retorna una respuesta de descarga en formato Excel (.xlsx)
+     * del Registro de Costales para la Work Order proporcionada.
+     */
+    public function generate(WorkOrder $workOrder, ?string $customTemplatePath = null): StreamedResponse
+    {
+        // 1. Preparar datos y validar existencia de muestras
+        $data = $this->prepareData($workOrder);
 
         // 2. Cargar la plantilla Excel
         $templatePath = $this->resolveTemplatePath($customTemplatePath);
@@ -61,45 +129,30 @@ class SackFormGeneratorService
         $spreadsheet = IOFactory::load($templatePath);
         $sheet = $spreadsheet->getActiveSheet();
 
-        // 3. Obtener datos de cabecera
-        $proyectoNombre = $this->resolveProjectName($samples);
-        $sentFrom       = $this->resolveSentFrom($workOrder, $samples);
-        $geologo        = $this->resolveGeologistName($samples);
-        $sentDate       = $this->resolveSentDate($workOrder, $samples);
-
-        $totalSamples = $workOrder->samples_quantity ?: $samples->count();
-
-        // 4. Agrupar muestras en sacos (costales) aplicando el límite y factores configurados en Samples Settings
-        $settings      = SampleSetting::getSettings();
-        $maxWeight     = (float) ($settings->max_sack_weight ?? 25.0);
-        $defaultWeight = (float) config('coreflow.default_sample_weight', 1.0);
-        $sacks         = $this->buildSacks($samples, $maxWeight, $defaultWeight, $settings);
-        $totalSacks    = count($sacks);
-
-        // 5. Llenar encabezados generales según las posiciones exactas del formato
+        // 3. Llenar encabezados generales según las posiciones exactas del formato
         $sheet->setCellValue('E2', $workOrder->work_order_code);
 
         // Columna B (Merged B:C)
         $sheet->setCellValue('B7', 'Drill Core');
-        $sheet->setCellValue('B8', (string) $totalSamples);
-        $sheet->setCellValue('B9', (string) $totalSacks);
+        $sheet->setCellValue('B8', (string) $data['totalSamples']);
+        $sheet->setCellValue('B9', (string) $data['totalSacks']);
         $sheet->setCellValue('B10', 'ALS');
-        $sheet->setCellValue('B11', $sentDate);
+        $sheet->setCellValue('B11', $data['sentDate']);
 
         // Columna E (Fila 7-11)
-        $sheet->setCellValue('E7', $proyectoNombre);
-        $sheet->setCellValue('E8', $sentFrom);
-        $sheet->setCellValue('E9', $geologo);
+        $sheet->setCellValue('E7', $data['proyectoNombre']);
+        $sheet->setCellValue('E8', $data['sentFrom']);
+        $sheet->setCellValue('E9', $data['geologo']);
         $sheet->setCellValue('E10', ''); // Vehículo en blanco
         $sheet->setCellValue('E11', ''); // Conductor en blanco
 
-        // 6. Escribir los costales y sus muestras aplicando los colores y alturas de fila legibles (20pt)
-        $this->populateSacksGrid($sheet, $sacks);
+        // 4. Escribir los costales y sus muestras aplicando los colores y alturas de fila legibles (20pt)
+        $this->populateSacksGrid($sheet, $data['sacks'], $data['seriesStarts']);
 
-        // 6.1 Fecha de envío en "Firmas de Autorización" (igual a la fecha de envío en B11)
-        $this->writePrintDate($sheet, $sentDate);
+        // 4.1 Fecha en "Firmas de Autorización" (desacoplada de fecha de envío, en blanco para firma manuscrita)
+        $this->writePrintDate($sheet, null);
 
-        // 7. Preparar la descarga StreamedResponse compatible con Filament/Livewire
+        // 5. Preparar la descarga StreamedResponse compatible con Filament/Livewire
         $filename = "Registro_Costales_WO_{$workOrder->work_order_code}.xlsx";
 
         return response()->streamDownload(
@@ -204,12 +257,17 @@ class SackFormGeneratorService
     }
 
     /**
-     * Escribe la fecha de envío en la celda de fecha de "Firmas de Autorización" (E51).
-     * Es idéntica a la fecha de envío de B11 en formato DD/MM/AAAA.
+     * Escribe la fecha en la celda de fecha de "Firmas de Autorización" (E51).
+     * Si no se proporciona fecha ($authorizationDate === null o ''), se deja en blanco
+     * para permitir firma y fecha manuscrita física.
      * Localiza dinámicamente la fila: columna E con el rótulo "FECHA"; la celda de captura queda debajo.
      */
-    public function writePrintDate($sheet, string $sentDate = ''): void
+    public function writePrintDate($sheet, ?string $authorizationDate = null): void
     {
+        if (empty($authorizationDate)) {
+            return;
+        }
+
         $highest = $sheet->getHighestRow();
         $labelRow = null;
 
@@ -231,7 +289,7 @@ class SackFormGeneratorService
         }
 
         if ($labelRow !== null) {
-            $sheet->setCellValue('E' . ($labelRow + 1), $sentDate);
+            $sheet->setCellValue('E' . ($labelRow + 1), $authorizationDate);
         }
     }
 
@@ -241,7 +299,11 @@ class SackFormGeneratorService
     public function resolveTemplatePath(?string $customPath = null): ?string
     {
         if ($customPath !== null) {
-            return ($this->isPathReadable($customPath)) ? $customPath : null;
+            if ($this->isPathReadable($customPath)) {
+                $real = realpath($customPath);
+                return $real ?: $customPath;
+            }
+            return null;
         }
 
         $candidates = [
@@ -251,7 +313,8 @@ class SackFormGeneratorService
 
         foreach ($candidates as $path) {
             if (is_string($path) && $this->isPathReadable($path)) {
-                return $path;
+                $real = realpath($path);
+                return $real ?: $path;
             }
         }
 
@@ -281,40 +344,230 @@ class SackFormGeneratorService
     }
 
     /**
-     * Agrupa las muestras en costales asegurando que la suma de sus pesos no sobrepase estrictamente $maxWeight (25.0 kg).
+     * Agrupa las muestras en costales aplicando las reglas del cliente por diámetro y metraje:
+     * - PQ: máx. 2 muestras (3 - 4 m)
+     * - HQ: máx. 3 muestras (6 m)
+     * - NQ: máx. 4 muestras (8 m)
+     * - BQ: máx. 5 muestras (10 m)
+     * - Límite global absoluto: máximo 10 muestras por costal
+     * - Límite de seguridad laboral: suma de pesos <= $maxWeight (25.0 kg)
+     * - Distribución homogénea: reparte equitativamente para evitar costales huérfanos (ej. 11 BQ -> 6 y 5).
      *
      * @param iterable<DrillHoleSample> $samples
      * @return array<int, array{number: int, weight: float, samples: array<string>}>
      */
-    public function buildSacks($samples, float $maxWeight, float $defaultWeight, ?SampleSetting $settings = null): array
+    public function buildSacks($samples, float $maxWeight = 25.0, float $defaultWeight = 1.0, ?SampleSetting $settings = null): array
     {
         $settings = $settings ?? SampleSetting::getSettings();
+
+        if (empty($samples)) {
+            return [];
+        }
+
+        $sampleList = is_array($samples)
+            ? array_values($samples)
+            : (method_exists($samples, 'values') ? $samples->values()->all() : iterator_to_array($samples));
+
+        if (empty($sampleList)) {
+            return [];
+        }
+
+        // 1. Dividir las muestras en secciones contiguas por diámetro (core_size)
+        $sections       = [];
+        $currentSection = [];
+        $currentDiam    = null;
+
+        foreach ($sampleList as $sample) {
+            $diam = $this->resolveCoreSize($sample);
+
+            if ($currentDiam === null || $diam === $currentDiam) {
+                $currentSection[] = $sample;
+                $currentDiam      = $diam;
+            } else {
+                $sections[] = [
+                    'diameter' => $currentDiam,
+                    'samples'  => $currentSection,
+                ];
+                $currentSection = [$sample];
+                $currentDiam    = $diam;
+            }
+        }
+
+        if (!empty($currentSection)) {
+            $sections[] = [
+                'diameter' => $currentDiam,
+                'samples'  => $currentSection,
+            ];
+        }
+
+        // 2. Empacar cada sección de forma homogénea y numerar consecutivamente
+        $allSacks   = [];
+        $sackNumber = 1;
+
+        foreach ($sections as $section) {
+            $sectionSacks = $this->partitionSectionHomogeneously(
+                $section['samples'],
+                $section['diameter'],
+                $maxWeight,
+                $defaultWeight,
+                $settings
+            );
+
+            foreach ($sectionSacks as $sack) {
+                $sack['number'] = $sackNumber++;
+                $allSacks[]     = $sack;
+            }
+        }
+
+        return $allSacks;
+    }
+
+    /**
+     * Resuelve el diámetro normalizado de la muestra (PQ, HQ, NQ, BQ).
+     */
+    public function resolveCoreSize($sample): string
+    {
+        $coreSize = strtoupper(trim((string) ($sample->core_size ?: $sample->barreno?->core_size)));
+
+        if (str_starts_with($coreSize, 'PQ')) {
+            return 'PQ';
+        }
+        if (str_starts_with($coreSize, 'HQ')) {
+            return 'HQ';
+        }
+        if (str_starts_with($coreSize, 'NQ')) {
+            return 'NQ';
+        }
+        if (str_starts_with($coreSize, 'BQ')) {
+            return 'BQ';
+        }
+
+        return 'HQ';
+    }
+
+    /**
+     * Particiona una sección homogénea de muestras según diámetro, metraje y peso.
+     *
+     * @param array<DrillHoleSample> $samples
+     * @return array<int, array{number: int, weight: float, samples: array<string>}>
+     */
+    private function partitionSectionHomogeneously(
+        array $samples,
+        string $coreSize,
+        float $maxWeight,
+        float $defaultWeight,
+        SampleSetting $settings
+    ): array {
+        $rules = match ($coreSize) {
+            'PQ' => ['nominal' => 2, 'max_samples' => 2, 'max_meters' => 4.0],
+            'HQ' => ['nominal' => 3, 'max_samples' => 3, 'max_meters' => 6.0],
+            'NQ' => ['nominal' => 4, 'max_samples' => 5, 'max_meters' => 10.0],
+            'BQ' => ['nominal' => 5, 'max_samples' => 6, 'max_meters' => 12.0],
+            default => ['nominal' => 3, 'max_samples' => 3, 'max_meters' => 6.0],
+        };
+
+        $n = count($samples);
+        if ($n === 0) {
+            return [];
+        }
+
+        // Número inicial de costales: round(N / nominal) para permitir balanceo homogéneo (ej. 11 BQ -> 2 costales de 6 y 5)
+        $k = max(1, (int) round($n / $rules['nominal']));
+
+        $finalSacks = [];
+        $valid = false;
+
+        while (!$valid && $k <= $n) {
+            $candidateSacks = [];
+            $base = intdiv($n, $k);
+            $rem = $n % $k;
+            $sampleIdx = 0;
+            $possible = true;
+
+            for ($s = 1; $s <= $k; $s++) {
+                $sackCapacity = ($s <= $rem) ? ($base + 1) : $base;
+
+                $sackSampleCodes = [];
+                $sackWeight = 0.0;
+                $sackMeters = 0.0;
+
+                for ($j = 0; $j < $sackCapacity; $j++) {
+                    if ($sampleIdx >= $n) {
+                        break;
+                    }
+
+                    $sample = $samples[$sampleIdx];
+                    $w = $this->resolveSampleWeight($sample, $settings, $defaultWeight);
+                    $len = (float) ($sample->sample_length > 0 ? $sample->sample_length : ($sample->length > 0 ? $sample->length : 0));
+
+                    $sackSampleCodes[] = $sample->sample_number;
+                    $sackWeight = round($sackWeight + $w, 3);
+                    $sackMeters = round($sackMeters + $len, 3);
+                    $sampleIdx++;
+                }
+
+                // Validar restricciones:
+                // 1. Peso acumulado <= max_sack_weight (25.0 kg)
+                // 2. Muestras por costal <= 10 (límite global absoluto)
+                // 3. Muestras por costal <= max_samples permitido para el diámetro
+                // 4. Metraje <= max_meters (con tolerancia de 0.5m)
+                $countSamples = count($sackSampleCodes);
+                $isWeightSafe = ($sackWeight <= ($maxWeight + 0.0001));
+                $isCountSafe  = ($countSamples <= 10 && $countSamples <= $rules['max_samples']);
+                $isMetersSafe = ($rules['max_meters'] <= 0 || $sackMeters <= ($rules['max_meters'] + 0.5));
+
+                if (!$isWeightSafe || !$isCountSafe || !$isMetersSafe) {
+                    $possible = false;
+                    break;
+                }
+
+                $candidateSacks[] = [
+                    'number'  => $s,
+                    'weight'  => $sackWeight,
+                    'samples' => $sackSampleCodes,
+                ];
+            }
+
+            if ($possible && count($candidateSacks) === $k) {
+                $valid = true;
+                $finalSacks = $candidateSacks;
+            } else {
+                $k++; // Incrementar y reintentar balanceo
+            }
+        }
+
+        if (!$valid || empty($finalSacks)) {
+            return $this->fallbackGreedySacks($samples, $maxWeight, $defaultWeight, $settings);
+        }
+
+        return $finalSacks;
+    }
+
+    /**
+     * Respaldo voraz acumulativo exclusivamente por peso en casos atípicos extremos.
+     *
+     * @param array<DrillHoleSample> $samples
+     * @return array<int, array{number: int, weight: float, samples: array<string>}>
+     */
+    private function fallbackGreedySacks(array $samples, float $maxWeight, float $defaultWeight, SampleSetting $settings): array
+    {
         $sacks = [];
-        $currentSack = [
-            'number'  => 1,
-            'weight'  => 0.0,
-            'samples' => [],
-        ];
+        $current = ['number' => 1, 'weight' => 0.0, 'samples' => []];
 
         foreach ($samples as $sample) {
             $w = $this->resolveSampleWeight($sample, $settings, $defaultWeight);
 
-            // Si agregar esta muestra superaría estrictamente el peso máximo y el costal ya tiene muestras, cerrar y abrir otro costal
-            if (!empty($currentSack['samples']) && (($currentSack['weight'] + $w) > ($maxWeight + 0.0001))) {
-                $sacks[] = $currentSack;
-                $currentSack = [
-                    'number'  => count($sacks) + 1,
-                    'weight'  => 0.0,
-                    'samples' => [],
-                ];
+            if (!empty($current['samples']) && (($current['weight'] + $w) > ($maxWeight + 0.0001))) {
+                $sacks[] = $current;
+                $current = ['number' => count($sacks) + 1, 'weight' => 0.0, 'samples' => []];
             }
 
-            $currentSack['samples'][] = $sample->sample_number;
-            $currentSack['weight']    = round($currentSack['weight'] + $w, 3);
+            $current['samples'][] = $sample->sample_number;
+            $current['weight']    = round($current['weight'] + $w, 3);
         }
 
-        if (!empty($currentSack['samples'])) {
-            $sacks[] = $currentSack;
+        if (!empty($current['samples'])) {
+            $sacks[] = $current;
         }
 
         return $sacks;
@@ -399,8 +652,9 @@ class SackFormGeneratorService
      * Rellena la cuadrícula de costales aplicando estilos exactos y asegurando altura de fila uniforme (20pt):
      * - Encabezado del costal: Fondo #2E5C8A, texto blanco en negrita, altura 22pt.
      * - Celdas de muestras: Fondo #F2F2F2, texto centrado con bordes, altura 20pt.
+     * - Celdas de inicio de nueva serie de folios: Fondo #FCE4D6 (naranja tenue), texto en negrita y borde #ED7D31.
      */
-    private function populateSacksGrid($sheet, array $sacks): void
+    private function populateSacksGrid($sheet, array $sacks, array $seriesStarts = []): void
     {
         // Limpiar filas de bloques estáticos pre-diseñados (filas 19 a 48)
         $sheet->removeRow(19, 30);
@@ -446,7 +700,12 @@ class SackFormGeneratorService
                         $dataRow  = 15 + $sampleIdx;
                         $dataCell = "{$colLetter}{$dataRow}";
                         $sheet->setCellValue($dataCell, $sampleCode);
-                        $this->applySampleCellStyle($sheet, $dataCell, $dataRow);
+
+                        if (!empty($seriesStarts[$sampleCode])) {
+                            $this->applyNewSeriesCellStyle($sheet, $dataCell, $dataRow);
+                        } else {
+                            $this->applySampleCellStyle($sheet, $dataCell, $dataRow);
+                        }
                     }
                 }
 
@@ -483,13 +742,92 @@ class SackFormGeneratorService
                         $dataRow  = $headerRow + 1 + $sampleIdx;
                         $dataCell = "{$colLetter}{$dataRow}";
                         $sheet->setCellValue($dataCell, $sampleCode);
-                        $this->applySampleCellStyle($sheet, $dataCell, $dataRow);
+
+                        if (!empty($seriesStarts[$sampleCode])) {
+                            $this->applyNewSeriesCellStyle($sheet, $dataCell, $dataRow);
+                        } else {
+                            $this->applySampleCellStyle($sheet, $dataCell, $dataRow);
+                        }
                     }
                 }
 
                 $currentRow = $headerRow + $totalBlockRows;
             }
         }
+    }
+
+    /**
+     * Detecta los números de muestra que inician una nueva serie de folios:
+     * - Cuando cambia el prefijo alfabético del folio (ej. ML vs NV)
+     * - Cuando existe un salto numérico no consecutivo (ej. ML157999 a ML170000)
+     *
+     * @param iterable<DrillHoleSample> $samples
+     * @return array<string, bool> Mapa [sample_number => true]
+     */
+    public function detectSeriesStarts($samples): array
+    {
+        $seriesStarts = [];
+        $prevPrefix   = null;
+        $prevNum      = null;
+
+        $sampleList = is_array($samples)
+            ? array_values($samples)
+            : (method_exists($samples, 'values') ? $samples->values()->all() : iterator_to_array($samples));
+
+        foreach ($sampleList as $i => $sample) {
+            $sampleNumber = trim((string) ($sample->sample_number ?? ''));
+            $prefix       = '';
+            $numeric      = null;
+
+            if (preg_match('/^([A-Za-z_-]*?)(\d+)$/', $sampleNumber, $matches)) {
+                $prefix  = $matches[1];
+                $numeric = (int) $matches[2];
+            }
+
+            if ($i > 0) {
+                $isPrefixChange   = ($prevPrefix !== null && $prefix !== $prevPrefix);
+                $isNonConsecutive = ($numeric !== null && $prevNum !== null && $numeric !== ($prevNum + 1));
+
+                if ($isPrefixChange || $isNonConsecutive) {
+                    $seriesStarts[$sampleNumber] = true;
+                }
+            }
+
+            $prevPrefix = $prefix;
+            $prevNum    = $numeric;
+        }
+
+        return $seriesStarts;
+    }
+
+    /**
+     * Aplica el estilo requerido para la celda de inicio de nueva serie de folios
+     * (Fondo naranja tenue #FCE4D6, texto en negrita #782800 y borde visible #ED7D31) y fija la altura a 20pt.
+     */
+    public function applyNewSeriesCellStyle($sheet, string $cellCoordinate, int $row): void
+    {
+        $sheet->getRowDimension($row)->setRowHeight(20);
+        $sheet->getStyle($cellCoordinate)->applyFromArray([
+            'fill' => [
+                'fillType'   => Fill::FILL_SOLID,
+                'startColor' => ['argb' => 'FFFCE4D6'],
+            ],
+            'font' => [
+                'bold'  => true,
+                'color' => ['argb' => 'FF782800'],
+                'size'  => 11,
+            ],
+            'alignment' => [
+                'horizontal' => Alignment::HORIZONTAL_CENTER,
+                'vertical'   => Alignment::VERTICAL_CENTER,
+            ],
+            'borders' => [
+                'allBorders' => [
+                    'borderStyle' => Border::BORDER_MEDIUM,
+                    'color'       => ['argb' => 'FFED7D31'],
+                ],
+            ],
+        ]);
     }
 
     /**

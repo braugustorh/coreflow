@@ -73,6 +73,15 @@ class DrillHoleSampleObserver
         }
     }
 
+    public function created(DrillHoleSample $drillHoleSample): void
+    {
+        if (WorkOrder::isSampleQuantitySyncSuspended() || empty($drillHoleSample->work_order_id)) {
+            return;
+        }
+
+        WorkOrder::syncSamplesQuantity($drillHoleSample->work_order_id);
+    }
+
     public function deleting(DrillHoleSample $drillHoleSample): void
     {
         if ($drillHoleSample->isSent()) {
@@ -84,8 +93,24 @@ class DrillHoleSampleObserver
         $drillHoleSample->qcPhotos()->get()->each->delete();
     }
 
+    public function deleted(DrillHoleSample $drillHoleSample): void
+    {
+        if (WorkOrder::isSampleQuantitySyncSuspended() || empty($drillHoleSample->work_order_id)) {
+            return;
+        }
+
+        WorkOrder::syncSamplesQuantity($drillHoleSample->work_order_id);
+    }
+
     public function updated(DrillHoleSample $drillHoleSample): void
     {
+        if (!WorkOrder::isSampleQuantitySyncSuspended() && $drillHoleSample->wasChanged('work_order_id')) {
+            WorkOrder::syncSamplesQuantity([
+                $drillHoleSample->getOriginal('work_order_id'),
+                $drillHoleSample->work_order_id,
+            ]);
+        }
+
         if ($drillHoleSample->wasChanged('to_depth')) {
             $difference = $drillHoleSample->to_depth - $drillHoleSample->getOriginal('to_depth');
 

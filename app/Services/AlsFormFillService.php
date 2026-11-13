@@ -20,6 +20,32 @@ class AlsFormFillService
      */
     public function generate(WorkOrder $workOrder): StreamedResponse
     {
+        try {
+            $pdfContent = $this->generatePdfBinary($workOrder);
+        } catch (\RuntimeException $e) {
+            $status = in_array($e->getCode(), [422, 500], true) ? $e->getCode() : 500;
+            abort($status, $e->getMessage());
+        }
+
+        // Retornar como descarga compatible con Filament/Livewire
+        $filename = "Formulario_ALS_WO_{$workOrder->work_order_code}.pdf";
+
+        return response()->streamDownload(
+            function () use ($pdfContent) {
+                echo $pdfContent;
+            },
+            $filename,
+            ['Content-Type' => 'application/pdf']
+        );
+    }
+
+    /**
+     * Genera y retorna el binario PDF crudo del formulario ALS para la Work Order.
+     *
+     * @throws \RuntimeException si la Work Order no tiene muestras o falla la API pdf.co
+     */
+    public function generatePdfBinary(WorkOrder $workOrder): string
+    {
         // 1. Cargar muestras ordenadas
         $samples = DrillHoleSample::where('work_order_id', $workOrder->id)
             ->with(['proyecto', 'barreno.proyecto'])
@@ -27,7 +53,7 @@ class AlsFormFillService
             ->get();
 
         if ($samples->isEmpty()) {
-            abort(422, 'La Work Order no tiene muestras asignadas.');
+            throw new \RuntimeException('La Work Order no tiene muestras asignadas.', 422);
         }
 
         // 2. Datos de cabecera
@@ -65,7 +91,7 @@ class AlsFormFillService
             && in_array(strtoupper((string) $proyecto->code), config('als.blank_gra09_projects', []), true);
 
         $isRush       = $samples->contains('rush', true);
-        $totalSamples = $workOrder->samples_quantity ?: $samples->count();
+        $totalSamples = $samples->count();
 
         // 3. Construir grupos de rangos
         $groups = $this->buildRangeGroups($samples);
@@ -86,18 +112,7 @@ class AlsFormFillService
         );
 
         // 5. Llamar a la API de pdf.co
-        $pdfContent = $this->callPdfCoApi($fields);
-
-        // 6. Retornar como descarga compatible con Filament/Livewire
-        $filename = "Formulario_ALS_WO_{$workOrder->work_order_code}.pdf";
-
-        return response()->streamDownload(
-            function () use ($pdfContent) {
-                echo $pdfContent;
-            },
-            $filename,
-            ['Content-Type' => 'application/pdf']
-        );
+        return $this->callPdfCoApi($fields);
     }
 
     /**
@@ -119,6 +134,7 @@ class AlsFormFillService
         $fields = [
             // --- Cabecera ---
             ['fieldName' => 'Company name',      'text' => $companyName],
+            ['fieldName' => 'Client Code',       'text' => ''], // Limpiar 'XXX' predefinido en la plantilla
             ['fieldName' => 'Submitted by',      'text' => $supervisor],
             ['fieldName' => 'Contact number',    'text' => $phone],
             ['fieldName' => 'Autorised by Name', 'text' => $supervisor],
@@ -178,11 +194,11 @@ class AlsFormFillService
         ->connectTimeout(15)
         ->timeout(60)
         ->post(self::API_URL, [
-            'url'     => $template,
-            'fields'  => $fields,
-            'flatten' => true,   // PDF no editable en el output
-            'async'   => false,
-            'name'    => 'als_filled.pdf',
+            'url'      => $template,
+            'fields'   => $fields,
+            'profiles' => "{ 'FlattenDocument()': [] }", // Aplana AcroForm a contenido estático no editable
+            'async'    => false,
+            'name'     => 'als_filled.pdf',
         ]);
 
         if ($response->failed()) {
@@ -190,21 +206,21 @@ class AlsFormFillService
                 'status' => $response->status(),
                 'body'   => $response->body(),
             ]);
-            abort(500, 'Error al generar el PDF con pdf.co: ' . $response->status());
+            throw new \RuntimeException('Error al generar el PDF con pdf.co: ' . $response->status(), 500);
         }
 
         $json = $response->json();
 
         if (! empty($json['error'])) {
             Log::error('pdf.co API returned error', $json);
-            abort(500, 'Error pdf.co: ' . ($json['message'] ?? 'Respuesta inesperada'));
+            throw new \RuntimeException('Error pdf.co: ' . ($json['message'] ?? 'Respuesta inesperada'), 500);
         }
 
         $pdfUrl = $json['url'] ?? null;
 
         if (! $pdfUrl) {
             Log::error('pdf.co response missing url', $json);
-            abort(500, 'pdf.co no retornó una URL válida del PDF.');
+            throw new \RuntimeException('pdf.co no retornó una URL válida del PDF.', 500);
         }
 
         // Descargar el PDF binario desde la URL temporal (válida 60 min)
@@ -220,7 +236,7 @@ class AlsFormFillService
         ->get($pdfUrl);
 
         if ($download->failed()) {
-            abort(500, 'No se pudo descargar el PDF generado por pdf.co.');
+            throw new \RuntimeException('No se pudo descargar el PDF generado por pdf.co.', 500);
         }
 
         return $download->body();

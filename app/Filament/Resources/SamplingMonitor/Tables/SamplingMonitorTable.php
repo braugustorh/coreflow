@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\SamplingMonitor\Tables;
 
+use App\Filament\Actions\ExportFormatsAction;
 use App\Models\DrillHoleSample;
 use App\Models\SampleSetting;
 use App\Models\User;
@@ -41,6 +42,7 @@ class SamplingMonitorTable
                     ->withMin('drillHoleSamples', 'sample_number')
                     ->withMax('drillHoleSamples', 'sample_number')
                     ->withCount([
+                        'drillHoleSamples',
                         'drillHoleSamples as qc_required_count' => function ($q) {
                             $q->requiringQcPhotos();
                         },
@@ -106,7 +108,7 @@ class SamplingMonitorTable
 
                 // ── Métricas agregadas ──────────────────────────────────────
 
-                TextColumn::make('samples_quantity')
+                TextColumn::make('drill_hole_samples_count')
                     ->label('# Muestras')
                     ->numeric()
                     ->sortable()
@@ -562,6 +564,7 @@ class SamplingMonitorTable
                     ->label('Formulario ALS')
                     ->icon('heroicon-o-document-arrow-down')
                     ->color('primary')
+                    ->hidden()
                     ->requiresConfirmation()
                     ->modalHeading('Generar Formulario ALS')
                     ->modalDescription('Se generará el PDF del formulario ALS Geochemistry con las muestras de esta Work Order.')
@@ -574,6 +577,7 @@ class SamplingMonitorTable
                     ->label('Costales')
                     ->icon('heroicon-o-table-cells')
                     ->color('success')
+                    ->hidden()
                     ->requiresConfirmation()
                     ->modalHeading('Registro de Costales (Excel)')
                     ->modalDescription('Se generará el reporte Excel de Registro de Costales para el despacho al laboratorio.')
@@ -592,6 +596,8 @@ class SamplingMonitorTable
                             return null;
                         }
                     }),
+
+                ExportFormatsAction::make(),
 
                 Action::make('send_order')
                     ->label(fn (WorkOrder $record): string => (bool) $record->drillHoleSamples()->value('is_archived') ? 'Devolver' : 'Enviar')

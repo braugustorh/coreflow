@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\WorkOrders\Tables;
 
+use App\Filament\Actions\ExportFormatsAction;
 use App\Models\DrillHoleSample;
 use App\Models\WorkOrder;
 use Filament\Actions\BulkActionGroup;
@@ -67,6 +68,7 @@ class WorkOrdersTable
                     ->label('Formulario ALS (PDF)')
                     ->icon('heroicon-o-document-arrow-down')
                     ->color('primary')
+                    ->hidden()
                     ->action(function (WorkOrder $record, \App\Services\AlsFormFillService $service) {
                         return $service->generate($record);
                     }),
@@ -75,6 +77,7 @@ class WorkOrdersTable
                     ->label('Registro Costales (Excel)')
                     ->icon('heroicon-o-table-cells')
                     ->color('success')
+                    ->hidden()
                     ->action(function (WorkOrder $record, \App\Services\SackFormGeneratorService $service) {
                         try {
                             return $service->generate($record);
@@ -89,6 +92,8 @@ class WorkOrdersTable
                             return null;
                         }
                     }),
+
+                ExportFormatsAction::make(restrictToAuthorizedRoles: true),
 
                 \Filament\Actions\Action::make('release_samples')
                     ->label('Desasociar muestras')

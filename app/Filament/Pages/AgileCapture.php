@@ -628,10 +628,14 @@ class AgileCapture extends Page implements HasForms, HasTable
 
         try {
             DB::transaction(function () use ($preparedPayloads, &$savedCount) {
-                foreach ($preparedPayloads as $payload) {
-                    DrillHoleSample::create($payload);
-                    $savedCount++;
-                }
+                WorkOrder::withoutSampleQuantitySync(function () use ($preparedPayloads, &$savedCount) {
+                    foreach ($preparedPayloads as $payload) {
+                        DrillHoleSample::create($payload);
+                        $savedCount++;
+                    }
+                });
+
+                WorkOrder::syncSamplesQuantity(array_column($preparedPayloads, 'work_order_id'));
             });
         } catch (\Throwable $e) {
             \Illuminate\Support\Facades\Log::error('[AgileCapture::saveBatch] Error transaccional al guardar lote: ' . $e->getMessage(), [

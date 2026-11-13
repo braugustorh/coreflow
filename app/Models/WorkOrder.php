@@ -183,6 +183,18 @@ class WorkOrder extends Model
     /** Roles autorizados para eliminar o desasociar muestras de una Work Order. */
     public const MANAGER_ROLES = ['super_admin', 'Admin CoreFlow'];
 
+    /** Roles autorizados para descargar formatos (Supervisor, Administrador y Super Admin). */
+    public const FORMAT_DOWNLOAD_ROLES = [
+        'super_admin',
+        'Admin CoreFlow',
+        'Admin',
+        'Administrador',
+        'Supervisor CoreS',
+        'Supervisor Coreshack',
+        'Supervisor',
+        'supervisor',
+    ];
+
     /** Estatus de WO que bloquean eliminar/desasociar (completada / liberada). */
     public const LOCKING_STATUSES = ['Liberado', 'Barreno completo en Lab'];
 
@@ -194,6 +206,17 @@ class WorkOrder extends Model
         $user ??= auth()->user();
 
         return $user && method_exists($user, 'hasRole') && $user->hasRole(self::MANAGER_ROLES);
+    }
+
+    /**
+     * Indica si el usuario tiene rol de Supervisor, Administrador o Super Admin
+     * autorizado para descargar los formatos de despacho.
+     */
+    public static function userCanDownloadFormats(?\Illuminate\Contracts\Auth\Authenticatable $user = null): bool
+    {
+        $user ??= auth()->user();
+
+        return $user && method_exists($user, 'hasRole') && $user->hasRole(self::FORMAT_DOWNLOAD_ROLES);
     }
 
     /**
@@ -246,5 +269,52 @@ class WorkOrder extends Model
 
             return $count;
         });
+    }
+
+    // ─── Sincronización eficiente de samples_quantity ────────────────────────
+
+    private static bool $suspendSampleQuantitySync = false;
+
+    public static function isSampleQuantitySyncSuspended(): bool
+    {
+        return self::$suspendSampleQuantitySync;
+    }
+
+    /**
+     * Ejecuta un bloque suspendiendo la sincronización automática por fila en el Observer
+     * (útil en inserciones masivas donde el conteo se recalcula una sola vez al final).
+     */
+    public static function withoutSampleQuantitySync(callable $callback): mixed
+    {
+        $previous = self::$suspendSampleQuantitySync;
+        self::$suspendSampleQuantitySync = true;
+
+        try {
+            return $callback();
+        } finally {
+            self::$suspendSampleQuantitySync = $previous;
+        }
+    }
+
+    /**
+     * Recalcula samples_quantity usando una única consulta indexada por cada Work Order afectada.
+     *
+     * @param  int|array<int, int|string|null>|null  $workOrderIds
+     */
+    public static function syncSamplesQuantity(int|array|null $workOrderIds): void
+    {
+        if ($workOrderIds === null) {
+            return;
+        }
+
+        $ids = array_values(array_unique(array_filter(
+            array_map(static fn ($id): int => (int) $id, (array) $workOrderIds),
+            static fn (int $id): bool => $id > 0
+        )));
+
+        foreach ($ids as $woId) {
+            $count = DrillHoleSample::where('work_order_id', $woId)->count();
+            self::where('id', $woId)->update(['samples_quantity' => $count]);
+        }
     }
 }
