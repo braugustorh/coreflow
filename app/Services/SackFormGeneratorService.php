@@ -372,22 +372,35 @@ class SackFormGeneratorService
             return [];
         }
 
-        // 1. Dividir las muestras en secciones contiguas por diámetro (core_size)
+        // 1. Dividir las muestras en secciones contiguas por diámetro (core_size).
+        // Los controles sin núcleo (Blancos y Estándares) heredan la sección activa
+        // para no fragmentar el diámetro en costales individuales.
         $sections       = [];
         $currentSection = [];
         $currentDiam    = null;
 
         foreach ($sampleList as $sample) {
-            $diam = $this->resolveCoreSize($sample);
+            $explicitDiam = $this->resolveExplicitCoreSize($sample);
+            if ($explicitDiam !== null) {
+                $currentDiam = $explicitDiam;
+                break;
+            }
+        }
+        $currentDiam ??= 'HQ';
 
-            if ($currentDiam === null || $diam === $currentDiam) {
+        foreach ($sampleList as $sample) {
+            $explicitDiam = $this->resolveExplicitCoreSize($sample);
+            $diam         = $explicitDiam ?? $currentDiam;
+
+            if ($diam === $currentDiam) {
                 $currentSection[] = $sample;
-                $currentDiam      = $diam;
             } else {
-                $sections[] = [
-                    'diameter' => $currentDiam,
-                    'samples'  => $currentSection,
-                ];
+                if (!empty($currentSection)) {
+                    $sections[] = [
+                        'diameter' => $currentDiam,
+                        'samples'  => $currentSection,
+                    ];
+                }
                 $currentSection = [$sample];
                 $currentDiam    = $diam;
             }
@@ -423,10 +436,41 @@ class SackFormGeneratorService
     }
 
     /**
-     * Resuelve el diámetro normalizado de la muestra (PQ, HQ, NQ, BQ).
+     * Determina si la muestra es un control sin núcleo físico (Blanco o Estándar)
+     * que no posee core_size propio ni consume el cupo de muestras de roca por costal.
      */
-    public function resolveCoreSize($sample): string
+    private function isNonCoreControlSample($sample): bool
     {
+        if ($sample instanceof DrillHoleSample) {
+            return $sample->isIneligibleForCoreSize();
+        }
+
+        $ctrl = strtoupper(trim((string) ($sample->control_type ?? '')));
+        if ($ctrl === '') {
+            return false;
+        }
+
+        return str_contains($ctrl, 'BLANK')
+            || str_contains($ctrl, 'BLK')
+            || str_contains($ctrl, 'BLANCO')
+            || $ctrl === 'BCO'
+            || str_contains($ctrl, 'STAND')
+            || str_starts_with($ctrl, 'STD-')
+            || $ctrl === 'STD'
+            || $ctrl === 'ESTANDAR'
+            || $ctrl === 'ESTÁNDAR';
+    }
+
+    /**
+     * Resuelve el diámetro explícito de la muestra (PQ, HQ, NQ, BQ) o null si no tiene
+     * o si es una muestra de control sin núcleo (Blanco / Estándar).
+     */
+    private function resolveExplicitCoreSize($sample): ?string
+    {
+        if ($this->isNonCoreControlSample($sample)) {
+            return null;
+        }
+
         $coreSize = strtoupper(trim((string) ($sample->core_size ?: $sample->barreno?->core_size)));
 
         if (str_starts_with($coreSize, 'PQ')) {
@@ -442,11 +486,21 @@ class SackFormGeneratorService
             return 'BQ';
         }
 
-        return 'HQ';
+        return null;
+    }
+
+    /**
+     * Resuelve el diámetro normalizado de la muestra (PQ, HQ, NQ, BQ).
+     */
+    public function resolveCoreSize($sample): string
+    {
+        return $this->resolveExplicitCoreSize($sample) ?? 'HQ';
     }
 
     /**
      * Particiona una sección homogénea de muestras según diámetro, metraje y peso.
+     * Los límites de cantidad por diámetro aplican a las muestras con núcleo; los blancos y estándares
+     * se integran en los costales contiguos mientras no se exceda el peso máximo ni el tope global de 10 muestras.
      *
      * @param array<DrillHoleSample> $samples
      * @return array<int, array{number: int, weight: float, samples: array<string>}>
@@ -471,64 +525,77 @@ class SackFormGeneratorService
             return [];
         }
 
-        // Número inicial de costales: round(N / nominal) para permitir balanceo homogéneo (ej. 11 BQ -> 2 costales de 6 y 5)
-        $k = max(1, (int) round($n / $rules['nominal']));
+        $nCore = count(array_filter($samples, fn ($s) => !$this->isNonCoreControlSample($s)));
+
+        // Sección compuesta únicamente por muestras de control (Blancos/Estándares)
+        if ($nCore === 0) {
+            return $this->partitionControlOnlySection($samples, $maxWeight, $defaultWeight, $settings);
+        }
+
+        // Número inicial de costales: round(N_core / nominal) para permitir balanceo homogéneo (ej. 11 BQ -> 2 costales de 6 y 5)
+        $k = max(1, (int) round($nCore / $rules['nominal']));
 
         $finalSacks = [];
         $valid = false;
 
-        while (!$valid && $k <= $n) {
+        while (!$valid && $k <= $nCore) {
             $candidateSacks = [];
-            $base = intdiv($n, $k);
-            $rem = $n % $k;
-            $sampleIdx = 0;
-            $possible = true;
+            $base           = intdiv($nCore, $k);
+            $bigLeft        = $nCore % $k;
+            $smallLeft      = $k - $bigLeft;
+            $sampleIdx      = 0;
+            $possible       = true;
 
             for ($s = 1; $s <= $k; $s++) {
-                $sackCapacity = ($s <= $rem) ? ($base + 1) : $base;
+                $isLastSack = ($s === $k);
+                $packed     = null;
 
-                $sackSampleCodes = [];
-                $sackWeight = 0.0;
-                $sackMeters = 0.0;
-
-                for ($j = 0; $j < $sackCapacity; $j++) {
-                    if ($sampleIdx >= $n) {
-                        break;
+                if ($bigLeft > 0) {
+                    $packed = $this->tryPackSack(
+                        $samples,
+                        $sampleIdx,
+                        $base + 1,
+                        $rules,
+                        $maxWeight,
+                        $defaultWeight,
+                        $settings,
+                        $isLastSack
+                    );
+                    if ($packed !== null) {
+                        $bigLeft--;
                     }
-
-                    $sample = $samples[$sampleIdx];
-                    $w = $this->resolveSampleWeight($sample, $settings, $defaultWeight);
-                    $len = (float) ($sample->sample_length > 0 ? $sample->sample_length : ($sample->length > 0 ? $sample->length : 0));
-
-                    $sackSampleCodes[] = $sample->sample_number;
-                    $sackWeight = round($sackWeight + $w, 3);
-                    $sackMeters = round($sackMeters + $len, 3);
-                    $sampleIdx++;
                 }
 
-                // Validar restricciones:
-                // 1. Peso acumulado <= max_sack_weight (25.0 kg)
-                // 2. Muestras por costal <= 10 (límite global absoluto)
-                // 3. Muestras por costal <= max_samples permitido para el diámetro
-                // 4. Metraje <= max_meters (con tolerancia de 0.5m)
-                $countSamples = count($sackSampleCodes);
-                $isWeightSafe = ($sackWeight <= ($maxWeight + 0.0001));
-                $isCountSafe  = ($countSamples <= 10 && $countSamples <= $rules['max_samples']);
-                $isMetersSafe = ($rules['max_meters'] <= 0 || $sackMeters <= ($rules['max_meters'] + 0.5));
+                if ($packed === null && $smallLeft > 0 && $base > 0) {
+                    $packed = $this->tryPackSack(
+                        $samples,
+                        $sampleIdx,
+                        $base,
+                        $rules,
+                        $maxWeight,
+                        $defaultWeight,
+                        $settings,
+                        $isLastSack
+                    );
+                    if ($packed !== null) {
+                        $smallLeft--;
+                    }
+                }
 
-                if (!$isWeightSafe || !$isCountSafe || !$isMetersSafe) {
+                if ($packed === null) {
                     $possible = false;
                     break;
                 }
 
+                $sampleIdx = $packed['nextIdx'];
                 $candidateSacks[] = [
                     'number'  => $s,
-                    'weight'  => $sackWeight,
-                    'samples' => $sackSampleCodes,
+                    'weight'  => $packed['weight'],
+                    'samples' => $packed['samples'],
                 ];
             }
 
-            if ($possible && count($candidateSacks) === $k) {
+            if ($possible && count($candidateSacks) === $k && $sampleIdx === $n) {
                 $valid = true;
                 $finalSacks = $candidateSacks;
             } else {
@@ -541,6 +608,159 @@ class SackFormGeneratorService
         }
 
         return $finalSacks;
+    }
+
+    /**
+     * Intenta empaquetar un costal a partir de $startIdx recolectando exactamente $targetCoreCapacity
+     * muestras con núcleo (más los controles precedentes o intermedios) y absorbiendo los controles
+     * inmediatos posteriores si el peso (<= $maxWeight) y el límite global (<= 10) lo permiten.
+     *
+     * @param array<DrillHoleSample> $samples
+     * @param array{nominal: int, max_samples: int, max_meters: float} $rules
+     * @return array{nextIdx: int, weight: float, samples: array<string>}|null
+     */
+    private function tryPackSack(
+        array $samples,
+        int $startIdx,
+        int $targetCoreCapacity,
+        array $rules,
+        float $maxWeight,
+        float $defaultWeight,
+        SampleSetting $settings,
+        bool $isLastSack
+    ): ?array {
+        $n               = count($samples);
+        $idx             = $startIdx;
+        $sackSampleCodes = [];
+        $sackWeight      = 0.0;
+        $sackMeters      = 0.0;
+        $coreInSack      = 0;
+
+        while ($idx < $n && $coreInSack < $targetCoreCapacity) {
+            $sample = $samples[$idx];
+            $w      = $this->resolveSampleWeight($sample, $settings, $defaultWeight);
+            $len    = $this->resolveSampleLength($sample);
+
+            $sackSampleCodes[] = $sample->sample_number;
+            $sackWeight        = round($sackWeight + $w, 3);
+            $sackMeters        = round($sackMeters + $len, 3);
+
+            if (!$this->isNonCoreControlSample($sample)) {
+                $coreInSack++;
+            }
+
+            $idx++;
+        }
+
+        if ($coreInSack < $targetCoreCapacity) {
+            return null;
+        }
+
+        // Absorber muestras de control contiguas posteriores si caben dentro del límite de peso y tope global de 10
+        while ($idx < $n && $this->isNonCoreControlSample($samples[$idx])) {
+            $ctrlSample = $samples[$idx];
+            $ctrlWeight = $this->resolveSampleWeight($ctrlSample, $settings, $defaultWeight);
+            $nextWeight = round($sackWeight + $ctrlWeight, 3);
+
+            if ($nextWeight <= ($maxWeight + 0.0001) && (count($sackSampleCodes) + 1) <= 10) {
+                $sackSampleCodes[] = $ctrlSample->sample_number;
+                $sackWeight        = $nextWeight;
+                $idx++;
+            } else {
+                break;
+            }
+        }
+
+        if ($isLastSack && $idx < $n) {
+            return null;
+        }
+
+        // Validar restricciones:
+        // 1. Peso acumulado <= max_sack_weight (25.0 kg)
+        // 2. Muestras totales por costal <= 10 (límite global absoluto)
+        // 3. Muestras de núcleo por costal <= max_samples permitido para el diámetro
+        // 4. Metraje <= max_meters (con tolerancia de 0.5m)
+        $isWeightSafe = ($sackWeight <= ($maxWeight + 0.0001));
+        $isCountSafe  = (count($sackSampleCodes) <= 10 && $coreInSack <= $rules['max_samples']);
+        $isMetersSafe = ($rules['max_meters'] <= 0 || $sackMeters <= ($rules['max_meters'] + 0.5));
+
+        if (!$isWeightSafe || !$isCountSafe || !$isMetersSafe) {
+            return null;
+        }
+
+        return [
+            'nextIdx' => $idx,
+            'weight'  => $sackWeight,
+            'samples' => $sackSampleCodes,
+        ];
+    }
+
+    /**
+     * Particiona una sección compuesta exclusivamente por muestras de control respetando peso máximo y límite de 10.
+     *
+     * @param array<DrillHoleSample> $samples
+     * @return array<int, array{number: int, weight: float, samples: array<string>}>
+     */
+    private function partitionControlOnlySection(
+        array $samples,
+        float $maxWeight,
+        float $defaultWeight,
+        SampleSetting $settings
+    ): array {
+        $n          = count($samples);
+        $k          = max(1, (int) ceil($n / 10));
+        $finalSacks = [];
+        $valid      = false;
+
+        while (!$valid && $k <= $n) {
+            $candidateSacks = [];
+            $base           = intdiv($n, $k);
+            $rem            = $n % $k;
+            $idx            = 0;
+            $possible       = true;
+
+            for ($s = 1; $s <= $k; $s++) {
+                $cap             = ($s <= $rem) ? ($base + 1) : $base;
+                $sackSampleCodes = [];
+                $sackWeight      = 0.0;
+
+                for ($j = 0; $j < $cap && $idx < $n; $j++) {
+                    $sample            = $samples[$idx++];
+                    $w                 = $this->resolveSampleWeight($sample, $settings, $defaultWeight);
+                    $sackSampleCodes[] = $sample->sample_number;
+                    $sackWeight        = round($sackWeight + $w, 3);
+                }
+
+                if ($sackWeight > ($maxWeight + 0.0001) || count($sackSampleCodes) > 10) {
+                    $possible = false;
+                    break;
+                }
+
+                $candidateSacks[] = [
+                    'number'  => $s,
+                    'weight'  => $sackWeight,
+                    'samples' => $sackSampleCodes,
+                ];
+            }
+
+            if ($possible && count($candidateSacks) === $k) {
+                $valid      = true;
+                $finalSacks = $candidateSacks;
+            } else {
+                $k++;
+            }
+        }
+
+        if (!$valid || empty($finalSacks)) {
+            return $this->fallbackGreedySacks($samples, $maxWeight, $defaultWeight, $settings);
+        }
+
+        return $finalSacks;
+    }
+
+    private function resolveSampleLength($sample): float
+    {
+        return (float) ($sample->sample_length > 0 ? $sample->sample_length : ($sample->length > 0 ? $sample->length : 0));
     }
 
     /**
@@ -586,13 +806,19 @@ class SackFormGeneratorService
         // 2. Muestras de Control (QA/QC)
         $isControl = strtolower((string) $sample->sample_type) === 'control' || !empty($sample->control_type);
         if ($isControl) {
-            $controlType = strtolower((string) $sample->control_type);
+            $controlType = strtolower(trim((string) $sample->control_type));
 
             if (str_contains($controlType, 'blanco') || str_contains($controlType, 'blank')) {
                 return (float) ($settings->blank_weight ?? 3.00);
             }
 
-            if (str_contains($controlType, 'estándar') || str_contains($controlType, 'estandar') || str_contains($controlType, 'standard')) {
+            if (
+                str_contains($controlType, 'estándar')
+                || str_contains($controlType, 'estandar')
+                || str_contains($controlType, 'standard')
+                || str_starts_with($controlType, 'std-')
+                || $controlType === 'std'
+            ) {
                 return (float) ($settings->standard_weight ?? 0.065);
             }
 
