@@ -93,7 +93,12 @@ class SamplingMonitorTable
                             ->with('barreno')
                             ->first()?->barreno?->nombre_barreno ?? '—'
                     )
-                    ->searchable()
+                    ->searchable(query: function (Builder $query, string $search): Builder {
+                        return $query->whereHas(
+                            'drillHoleSamples.barreno',
+                            fn ($q) => $q->where('nombre_barreno', 'like', "%{$search}%")
+                        );
+                    })
                     ->badge()
                     ->color('info'),
 
