@@ -911,9 +911,11 @@ class AgileCapture extends Page implements HasForms, HasTable
                     ->visible(fn () => !static::isCoreshackUser()),
                 TextInputColumn::make('weight')
                     ->label('WGHT')
+                    ->type('number')
+                    ->inputMode('decimal')
                     ->rules(['nullable', 'numeric', 'min:0', 'decimal:0,3'])
                     ->step(0.001)
-                    ->disabled(fn (DrillHoleSample $record): bool => !auth()->user()?->hasRole(['super_admin', 'Admin CoreFlow']) && ($record->is_archived || !empty($record->workOrder?->dispatch_date)))
+                    ->disabled(fn (DrillHoleSample $record): bool => !auth()->user()?->hasRole(['super_admin', 'Admin CoreFlow']) && $record->isSent())
                     ->sortable()
                     ->toggleable(fn () => !static::isCoreshackUser()),
                 TextColumn::make('sampled_at')
